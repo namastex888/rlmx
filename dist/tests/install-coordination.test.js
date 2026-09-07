@@ -457,4 +457,117 @@ it("helper imports stay inert for eval, stdin and nonexistent entry paths", () =
         assert.equal(result.stderr, "");
     }
 });
+it("real ACP lifetime does not block version or concurrent MCP startup", { timeout: 30_000 }, async () => {
+    const f = await fixture(true);
+    try {
+        await symlink(join(ROOT, "node_modules"), join(f.checkout, "node_modules"), "dir");
+        function protocol(command) {
+            const child = spawn(process.execPath, [join(f.checkout, "bin/mikro.mjs"), command, "--dir", f.area], {
+                cwd: f.area, env: { ...f.env, MIKRO_INSTALL_WAIT_MS: "3000" }, stdio: ["pipe", "pipe", "pipe"],
+            });
+            let out = "";
+            let err = "";
+            child.stdout.on("data", c => { out += c; });
+            child.stderr.on("data", c => { err += c; });
+            const done = new Promise((resolve, reject) => {
+                child.on("error", reject);
+                child.on("close", code => resolve({ code, out: out + err }));
+            });
+            f.processes.push({ child, done, output: () => out + err });
+            const send = (value) => child.stdin.write(JSON.stringify(value) + "\n");
+            async function response(id) {
+                await until(() => out.includes(`"id":${id}`) || child.exitCode !== null, `${command} response ${id} missing: ${err}`);
+                assert.equal(child.exitCode, null, `${command} exited before responding: ${err}`);
+                const message = out.trim().split("\n").map(line => JSON.parse(line)).find(value => value.id === id);
+                assert.ok(message?.result, `${command}: ${out}${err}`);
+                return message.result;
+            }
+            return { child, done, send, response };
+        }
+        const acp = protocol("acp");
+        acp.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+        assert.equal(typeof (await acp.response(1)).protocolVersion, "number");
+        const version = f.launch(["--version"], { MIKRO_INSTALL_WAIT_MS: "3000" });
+        const versionResult = await version.done;
+        assert.equal(versionResult.code, 0, versionResult.out);
+        assert.match(versionResult.out, /mikro v1\.0\.0/);
+        assert.equal(acp.child.exitCode, null, "ACP must remain alive while another command starts");
+        const mcp = protocol("mcp");
+        mcp.send({ jsonrpc: "2.0", id: 2, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "concurrent-fixture", version: "1" } } });
+        assert.ok((await mcp.response(2)).capabilities);
+        mcp.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+        mcp.send({ jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
+        assert.ok((await mcp.response(3)).tools.length > 0);
+        assert.equal(acp.child.exitCode, null, "ACP must remain alive during MCP initialization");
+        assert.equal(existsSync(join(f.area, "events")), false, "complete installs need no npm");
+        mcp.child.stdin.end();
+        assert.equal((await mcp.done).code, 0);
+        acp.child.stdin.end();
+        assert.equal((await acp.done).code, 0);
+    }
+    finally {
+        await f.close();
+    }
+});
+it("query waiting for stdin releases startup ownership and still propagates errors", { timeout: 30_000 }, async () => {
+    const f = await fixture(true);
+    try {
+        await symlink(join(ROOT, "node_modules"), join(f.checkout, "node_modules"), "dir");
+        const log = join(f.area, "query.jsonl");
+        const child = spawn(process.execPath, [join(f.checkout, "bin/mikro.mjs"), "--log", log], {
+            cwd: f.area, env: f.env, stdio: ["pipe", "pipe", "pipe"],
+        });
+        let out = "";
+        child.stdout.on("data", c => { out += c; });
+        child.stderr.on("data", c => { out += c; });
+        const done = new Promise((resolve, reject) => {
+            child.on("error", reject);
+            child.on("close", code => resolve({ code, out }));
+        });
+        f.processes.push({ child, done, output: () => out });
+        await until(async () => child.exitCode !== null || (existsSync(log) && (await readFile(log, "utf8")).includes('"event":"run_start"')), `query startup missing: ${out}`);
+        assert.equal(child.exitCode, null, out);
+        const version = f.launch(["--version"], { MIKRO_INSTALL_WAIT_MS: "3000" });
+        const result = await version.done;
+        assert.equal(result.code, 0, result.out);
+        assert.equal(child.exitCode, null, "query remains waiting while version runs");
+        assert.equal(existsSync(join(f.area, "events")), false);
+        child.stdin.end();
+        const failed = await done;
+        assert.equal(failed.code, 1, failed.out);
+        assert.match(failed.out, /no query provided/);
+    }
+    finally {
+        await f.close();
+    }
+});
+for (const mode of ["cache", "batch", "cost", "oolong"])
+    it(`${mode} model work after preparation does not own the installation mutex`, { timeout: 30_000 }, async () => {
+        const f = await fixture(true);
+        try {
+            await symlink(join(ROOT, "node_modules"), join(f.checkout, "node_modules"), "dir");
+            const module = mode === "cache" ? "rlm" : mode === "batch" ? "batch" : "benchmark";
+            const names = module === "rlm" ? ["rlmLoop"] : module === "batch" ? ["runBatch"] : ["runCostBenchmark", "runOolongBenchmark"];
+            // Replace only the model-work dependency in the isolated checkout. Keep
+            // all other exports and the entire real CLI/launcher unchanged; no paid
+            // calls occur. The marker proves command preparation reached model work.
+            await writeFile(join(f.checkout, `dist/src/${module}.js`), `export * from ${JSON.stringify(new URL(`../src/${module}.js`, import.meta.url).href)};\n` + names.map(name => `export async function ${name}() { console.log('MODEL_WORK_READY'); await new Promise(() => { setInterval(() => {}, 1000); }); }`).join("\n"));
+            const input = join(f.area, "input.md");
+            await writeFile(input, "A fixture question and context.\n");
+            const args = mode === "cache" ? ["cache", "--context", input] : mode === "batch" ? ["batch", input] : ["benchmark", mode];
+            const running = start(f.area, process.execPath, [join(f.checkout, "bin/mikro.mjs"), ...args], f.env);
+            f.processes.push(running);
+            await until(() => running.output().includes("MODEL_WORK_READY") || running.child.exitCode !== null, `${mode} did not reach model work`);
+            assert.match(running.output(), /MODEL_WORK_READY/);
+            assert.equal(running.child.exitCode, null);
+            const version = f.launch(["--version"], { MIKRO_INSTALL_WAIT_MS: "3000" });
+            const result = await version.done;
+            assert.equal(result.code, 0, result.out);
+            assert.equal(running.child.exitCode, null, "model work must remain active while version runs");
+            assert.equal(existsSync(join(f.area, "events")), false);
+        }
+        finally {
+            await f.close();
+        }
+    });
 //# sourceMappingURL=install-coordination.test.js.map

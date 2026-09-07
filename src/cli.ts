@@ -451,6 +451,10 @@ async function runQuery(opts: CliOptions): Promise<void> {
     }
   }
 
+  // Startup preparation is complete; stdin/model work must not own the
+  // installation mutex for the lifetime of a query.
+  signalCliReady();
+
   // Read query from stdin if not provided as argument
   let query = opts.query;
   if (!query && !process.stdin.isTTY) {
@@ -617,6 +621,7 @@ async function runCache(opts: CliOptions): Promise<void> {
   console.error(`mikro: warming cache for ${opts.context} (~${validation.estimatedTokens.toLocaleString()} tokens)`);
 
   config.cache.enabled = true;
+  signalCliReady();
 
   try {
     await rlmLoop("warmup", context, config, {
@@ -710,6 +715,7 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
     console.error(`mikro batch: processing ${opts.batchFile}`);
   }
 
+  signalCliReady();
   await runBatch(resolve(opts.batchFile), context, config, {
     maxIterations: opts.maxIterations,
     timeout: opts.timeout,
@@ -823,6 +829,7 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
     const { runCostBenchmark, formatBenchmarkTable, saveBenchmarkResults } = await import("./benchmark.js");
     const outputIdx = args.indexOf("--output");
     const outputFormat = outputIdx >= 0 && args[outputIdx + 1] === "json" ? "json" as const : "table" as const;
+    signalCliReady();
     const results = await runCostBenchmark(config, { outputFormat });
     if (outputFormat === "json") {
       console.log(JSON.stringify(results, null, 2));
@@ -838,6 +845,7 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
     const idx = idxArgIdx >= 0 ? parseInt(args[idxArgIdx + 1], 10) : undefined;
 
     const { runOolongBenchmark, formatBenchmarkTable, saveBenchmarkResults } = await import("./benchmark.js");
+    signalCliReady();
     const results = await runOolongBenchmark(config, { samples, idx });
     console.error(formatBenchmarkTable(results));
     const savedPath = await saveBenchmarkResults(results);
@@ -1061,9 +1069,11 @@ async function runUpdate(args: string[]): Promise<void> {
   await repointLauncher(root);
 }
 
-// The launcher holds install ownership through asynchronous command startup.
+// The launcher holds install ownership through startup, not command lifetime.
 // Updates delegate ownership to their mutation worker instead.
 export let installOperation = false;
+let signalCliReady: () => void;
+export const cliReady = new Promise<void>((resolveReady) => { signalCliReady = resolveReady; });
 async function main(): Promise<void> {
   const opts = parseCliArgs(process.argv.slice(2));
   installOperation = opts.command === "update";
@@ -1131,7 +1141,10 @@ async function main(): Promise<void> {
 
     case "acp": {
       const { runAcp } = await import("./acp/agent.js");
-      await runAcp();
+      // runAcp sets up stdio synchronously before waiting for disconnect.
+      const running = runAcp();
+      signalCliReady();
+      await running;
       break;
     }
 
@@ -1162,7 +1175,7 @@ async function main(): Promise<void> {
   }
 }
 
-export const cliReady = main().catch((err) => {
+void main().then(signalCliReady!).catch((err) => {
   console.error("mikro error:", err.message);
   process.exit(err.exitCode ?? 1);
 });
