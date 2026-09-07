@@ -114,16 +114,16 @@ Baseline is **released main 35f03a1 + completed 688 (`3e709222ee361ea43bcee59717
 
 ## Success Criteria
 
-- [ ] `package-lock.json` is the sole supported repository lock authority; the exact structural and five manifest-field checks pass, and all six declared competing locks are absent.
-- [ ] Every frozen invalid fixture fails with actionable npm-only guidance before npm launch or any `node_modules` mutation across the local wrapper, CI, canonical installer, source/committed updater, and launcher self-heal; the coherent fixture reaches npm once.
-- [ ] Documentation replaces raw local `npm ci` with `npm run deps:ci` and accurately excludes both deliberate raw npm bypass and consumer git-dependency installation from the repository-owned pre-mutation guarantee.
+- [x] `package-lock.json` is the sole supported repository lock authority; the exact structural and five manifest-field checks pass, and all six declared competing locks are absent.
+- [x] Every frozen invalid fixture fails with actionable npm-only guidance before npm launch or any `node_modules` mutation across the local wrapper, CI, canonical installer, source/committed updater, and launcher self-heal; the coherent fixture reaches npm once.
+- [x] Documentation replaces raw local `npm ci` with `npm run deps:ci` and accurately excludes both deliberate raw npm bypass and consumer git-dependency installation from the repository-owned pre-mutation guarantee.
 - [ ] Clean wrapped install, typecheck, build, full tests, real install/update smoke and generated-output equality pass on the exact integrated dev SHA; audit evidence acceptance follows the explicit unchanged-graph/no-new-or-worsened-findings policy below, without claiming a clean npm audit.
 - [ ] GitHub remote `refs/heads/dev`, the matching Actions workflow-runs API `.head_sha`, and installed checkout HEAD equal the candidate SHA before and after install/read-back proving npm-only repository behavior; release metadata remains a no-install workflow.
-- [ ] Diff is confined to the production path allowlist, with no dependency version changes.
+- [x] Diff is confined to the production path allowlist, with no dependency version changes.
 
-- [ ] Completed-689 seam reconciliation is recorded and independently cleared before 690 implementation; guard precedes all dependency recovery/parking without weakening lock ownership.
+- [x] Completed-689 seam reconciliation is recorded and independently cleared before 690 implementation; guard precedes all dependency recovery/parking without weakening lock ownership.
 - [ ] Final evidence identifies one non-draft dev→main PR, zero main-only commits, native Fable Harness 4888 review of its exact final head, and user-owned main merge.
-- [ ] Plan remains DRAFT until coordinator verifies independent plan evidence and persists its verdict; design verification is not wish approval.
+- [x] Plan remains DRAFT until coordinator verifies independent plan evidence and persists its verdict; design verification is not wish approval.
 
 ## Execution Strategy
 
@@ -161,9 +161,9 @@ Each wave waits for its predecessor's accepted evidence. Group 2 is intentionall
 3. Frozen manifest dependency/devDependency/engine/override values and full lock package resolution/integrity baseline from that integration SHA.
 
 **Acceptance Criteria:**
-- [ ] No pending prerequisite SHA/interface or unreviewed scope expansion; no bootstrap replay or dirty-checkout execution.
-- [ ] Baseline has 688 and 689 accepted, and 689's lock tests/contract remain applicable unchanged.
-- [ ] Public documentation/help search finds no supported Bun installation workflow; historical internal comments alone do not introduce Bun support.
+- [x] No pending prerequisite SHA/interface or unreviewed scope expansion; no bootstrap replay or dirty-checkout execution.
+- [x] Baseline has 688 and 689 accepted, and 689's lock tests/contract remain applicable unchanged.
+- [x] Public documentation/help search finds no supported Bun installation workflow; historical internal comments alone do not introduce Bun support.
 
 **Validation:**
 ```bash
@@ -192,10 +192,10 @@ This read-only ancestry/cleanliness gate fits a reconciliation group. In additio
 3. Complete matrix evidence and full runtime gate plus real smoke. No release-workflow changes.
 
 **Acceptance Criteria:**
-- [ ] Exact guard contract and all seam ordering requirements in Decisions pass, including actionable offending path/field plus npm-only remediation.
-- [ ] Frozen fixture matrix and coherent controls below execute every seam, with source and committed updater independently covered.
-- [ ] Successful recovery/serialization from 689 remains intact, while invalid authority prevents recovery and parking alike.
-- [ ] Dependency graph equals the Group 1 baseline; final diff is strictly allowlisted and generated output is reproducible.
+- [x] Exact guard contract and all seam ordering requirements in Decisions pass, including actionable offending path/field plus npm-only remediation.
+- [x] Frozen fixture matrix and coherent controls below execute every seam, with source and committed updater independently covered.
+- [x] Successful recovery/serialization from 689 remains intact, while invalid authority prevents recovery and parking alike.
+- [x] Dependency graph equals the Group 1 baseline; final diff is strictly allowlisted and generated output is reproducible.
 
 #### Frozen pre-mutation matrix (verbatim from verified DESIGN)
 
@@ -353,3 +353,29 @@ Committed689 is `0eb3b7307a582a45040f5a35706feadee0ee0fb2`, descended from688 `3
 Coordinator accepted688 `3e709222ee361ea43bcee597179c74aa84aabb35`,689 `0eb3b7307a582a45040f5a35706feadee0ee0fb2`, and tests-only Prime repair `4ce97a689a3a6792ae703a5c4f25e7b2ba3a35c6`. Final Prime source/generated hashes match its report; focused39/39 and full918/918 default-concurrency suites, build and typecheck pass on Node22.19.0/npm10.9.3 and Node26.7.0/npm11.19.0 after the last code change. A750ms fixture-only startup delay reproduces the old ENOENT and passes the repaired test on both. Reports: /tmp/nmstx-688-evidence/report.md, /tmp/nmstx-689-evidence/report.md and /tmp/mikro-prime-deadline-evidence/report.md. All initial failures remain retained; retries are not substituted for the deterministic repair.
 
 The immutable689 seam gate above is cleared with its explicitly inspected early-refusal delta. Actual fetchedmain35f03a1 is an ancestor; source/dependency/generated state is clean. Coordinator commits this approved plan/acceptance record, fast-forwards existing dev to that integration, and pins the full resulting INTEGRATION_BASE in the Orca implementation task and owner evidence. The execution checkout is a clean Orca child to preserve unrelated primary-checkout runtime databases; those files are never cleaned or staged. No source writer remains in the primary checkout. This lifecycle transition authorizes only the previously reviewed690 scope. Final native Fable review, remote candidate CI/install identity and user main merge gate remain open.
+
+
+## Aggregate Daily review corrections — 2026-09-07
+
+Native Claude Fable (`claude-fable-5-1`, session `1fe0603d-b98f-4ee0-9903-334ee68a4944`) reviewed baseline `578d047a36c8a29e3622f9c32f4680636b3fc390` against released main `35f03a1b1cc9937eee28a4cf6aa4edaabc126b23` through Sofia Harness port4888, room session `01a07db7-9e05-7670-bd85-54c8cf27f78c`. Baseline verdict is FIX-FIRST, not aggregate acceptance.
+
+The coordinator routed two bounded NMSTX-689 correctness repairs to the existing sole engineer in the690 child. They are separate689 fixes included in this aggregate Daily; the frozen npm-authority design and dependency graph remain unchanged:
+
+- Canonicalize both helper entry paths so Mac `/tmp` and `/var` directory aliases execute the helper instead of silently returning success. Preserve inert import/eval/stdin behavior; regression must execute the actual installer through a directory symlink. Separate fix commit `3ab044830ee47fdfa9207dafccd2707b9afa66d3` awaits integration and final review.
+- Separate CLI startup readiness from long-lived ACP/query execution. Retain mutex ownership through actual asynchronous preparation and all dependency mutations, then release for ordinary command work. Relevant `src/cli.ts`, generated CLI output, and install-coordination regression coverage are explicitly in this689 correction scope. Require real ACP initialize plus concurrent version/MCP initialization while ACP stays alive, alongside the existing delayed-startup exclusion fixture. Final Fable review must assess other command paths as well.
+
+These repairs do not authorize a second lock protocol, dependency upgrades, release workflow changes, or mutations of the installed user prefix. Earlier pre-fix full-suite and smoke passes are retained as historical evidence and cannot substitute for final combined-byte gates. Final all-files/all-commits Fable SHIP on the immutable promotion head remains mandatory.
+
+Reviewer-assessed nonblocking follow-ups: NMSTX-696 fixed Mac TCP coordination-port conflict; NMSTX-697 pre-mutation installer fetch failure creating unnecessary recovery; NMSTX-694 coordinated automatic legacy-only migration; NMSTX-693 existing dependency advisories. Known limitations must be disclosed in the final PR; tracking alone is not the reason for nonblocking classification.
+
+
+Clean-build correction: deleting `dist` before TypeScript compilation recreates `dist/src/cli.js` with mode0644 instead of the tracked0755, inherited from released main; the content is identical. The coordinator authorized deterministic executable-mode restoration in the normal `package.json` build script, preserving the CLI contract. Validate clean/build/generated equality and real install/update smoke on Node22/26 after that script-only change. Prior full-suite passes may be bound by exact equality of all production, test and generated contents, with the manifest build-script delta stated explicitly; final integrated-dev CI still reruns the full suite at its exact head. Candidate audit provenance must be refreshed for the changed manifest/SHA. Never mask mode differences through Git configuration or manual post-test restoration.
+
+
+## Implementation evidence accepted for integration
+
+Implementation candidate `2c48f5cf48c05c84ea1d42cd4cec6cffea332099` follows npm-authority commit `25d1eb229b7aaf0cc4595a365804506b3a40b3a7`, F2 correction `c5eb9dec5fb9e8b277b44f703213580ecf4ccee7`, and F1 correction `3ab044830ee47fdfa9207dafccd2707b9afa66d3`. Both Node22.19.0 and26.7.0 passed235 focused and1139 full tests, wrapped installation, build, typecheck and real install/update smoke. The final script-only mode correction passed clean/build/generated equality and real smoke on both runtimes. Root independently verified1514 tested tracked-file hashes and that the only subsequent delta is the build-script chmod; all production/test/generated contents are unchanged.
+
+Evidence on the execution host: `/tmp/nmstx-690-implementation/report.md`, `final-node22/receipt.json`, `final-node26/receipt.json`, `mode-corrected-node22/receipt.json`, `mode-corrected-node26/receipt.json`, `node26-immutable-mapping.json`, and `mode-fix-content-identity.json`. Root verification: `/home/genie/workspace/tmp/mikro-daily-688-690/root-content-verification.json`.
+
+The reviewed comparator was independently rerun against baseline578d047 and final2c48f5c using fresh `base-audit/` and `final-candidate-audit/` receipts: unchanged graph, no new/changed findings, only the two existing qs advisories in each inventory; both raw audits still exit1. The dependency lock is byte-identical to baseline. This accepts implementation evidence only. Integrated-dev exact-head CI, dedicated remote-dev install identity, final all-head native Fable review and the single non-draft promotion PR remain open gates recorded by the coordinator outside the immutable implementation handoff.
