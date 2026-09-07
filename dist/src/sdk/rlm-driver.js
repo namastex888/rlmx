@@ -12,6 +12,8 @@
  *
  *   2. **Tool-dispatch mode** (mikro#78, `tools` config present) —
  *      multi-turn conversation loop with native function-calling:
+ *      construction throws `NoExposableToolsError` when no tool
+ *      remaining after `expose` has a schema.
  *
  *        • ToolRegistry schemas → pi-ai `Tool[]` → provider-native
  *          function declarations (Gemini functionDeclarations,
@@ -65,6 +67,12 @@ import { ensureKhalModels, registerKhalProvider, KHAL_PROVIDER_ID, } from "../kh
 import { llmCompleteSimple } from "../llm.js";
 const DEFAULT_RETRY_FORMATTER = (hint) => `# Retry hint from the validator\n\n${hint}\n\n`;
 const DEFAULT_MAX_TOOL_ITERATIONS = 16;
+export class NoExposableToolsError extends Error {
+    constructor(handlerNames) {
+        super(`rlmDriver: tools supplied but no exposed tool has a schema (handlers without schema: ${handlerNames.join(", ")}). Add tools/<name>.schema.json next to each plugin, call register(name, handler, schema), or omit \`tools\` to run one-shot.`);
+        this.name = "NoExposableToolsError";
+    }
+}
 /**
  * Render the iteration's prompt. Keeps it intentionally simple — the
  * driver's job is to get a response surface, not to reproduce the
@@ -164,16 +172,26 @@ function toPiTool(name, schema) {
 }
 /**
  * Build an `IterationDriver` that drives the LLM. Legacy one-shot
- * mode when `tools` is absent; multi-turn tool-dispatch mode (mikro#78)
- * when `tools` is present and the registry has at least one schema.
+ * mode is used only when `tools` is absent. When `tools` is present,
+ * construction throws unless at least one tool remaining after
+ * `expose` has a schema; otherwise it uses multi-turn tool dispatch.
  */
 export function rlmDriver(config) {
     // Pick the branch at driver-construction time so runtime doesn't
     // re-decide per iteration. The returned generator is hermetic:
     // both branches satisfy `AsyncGenerator<IterationStep, void,
     // ToolCallOutcome | undefined>`.
-    if (config.tools && config.tools.registry.listSchemas().length > 0) {
-        return buildToolDispatchDriver(config, config.tools);
+    if (config.tools) {
+        const tools = config.tools;
+        if (buildPiTools(tools).length === 0) {
+            const exposed = tools.expose ? new Set(tools.expose) : null;
+            const handlersWithoutSchema = tools.registry
+                .list()
+                .filter((name) => (!exposed || exposed.has(name)) &&
+                tools.registry.describe(name) === undefined);
+            throw new NoExposableToolsError(handlersWithoutSchema);
+        }
+        return buildToolDispatchDriver(config, tools);
     }
     return buildLegacyDriver(config);
 }

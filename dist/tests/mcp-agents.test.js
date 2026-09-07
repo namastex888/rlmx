@@ -29,7 +29,7 @@ import { mkdtempSync, rmSync, mkdirSync, renameSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { discoverAgents, isProposedDir, splitModel, toToolName, PROPOSED_SUFFIX, } from "../src/mcp/agents.js";
-import { agentMaxIterations, applyAgent, buildResumeQuery, buildToolList, createAgentRegistry, isFailedRun, McpSessionStore, sessionResult, textResult, toolOutputSchema, } from "../src/mcp/server.js";
+import { agentMaxIterations, applyAgent, buildResumeQuery, buildToolList, createAgentRegistry, isFailedRun, McpSessionStore, sessionResult, textResult, toolOutputSchema, validateAgentTools, } from "../src/mcp/server.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../src/rlm.js";
 const MCP_TOOL_NAME = /^[a-zA-Z0-9_-]{1,128}$/;
 function writeAgent(root, name, yamlBody, system) {
@@ -145,6 +145,139 @@ describe("discoverAgents", () => {
         const triage = agents.find((a) => a.name === "triage");
         assert.ok(triage);
         assert.equal(triage.summary, "Project triage agent that classifies inbound issues.");
+    });
+});
+describe("validateAgentTools", () => {
+    let tmp;
+    before(() => {
+        tmp = mkdtempSync(join(tmpdir(), "mikro-mcp-tool-validation-"));
+    });
+    after(() => {
+        rmSync(tmp, { recursive: true, force: true });
+    });
+    function agent(name, tools, backend) {
+        const dir = join(tmp, "agents", name);
+        mkdirSync(join(dir, "tools"), { recursive: true });
+        return {
+            name,
+            toolName: toToolName(name),
+            dir,
+            summary: `${name} summary.`,
+            spec: {
+                dir,
+                schemaVersion: 1,
+                toolsApi: 1,
+                shape: "loop",
+                tools,
+                extras: {},
+                ...(backend ? { backend } : {}),
+            },
+        };
+    }
+    it("marks missing default-backend tools unavailable with a repair path", async () => {
+        const [missing] = await validateAgentTools(tmp, [agent("missing", ["ghost"])]);
+        assert.equal(missing.unavailable, `missing tools: ghost — add tools/ghost.{mjs,js,py} to ${missing.dir} ` +
+            "or remove the declaration, then retry.");
+        const description = buildToolList([missing])[1].description ?? "";
+        assert.match(description, /^UNAVAILABLE — "missing" cannot run: missing tools: ghost/);
+        assert.ok(description.includes(missing.unavailable));
+    });
+    it("leaves the same unresolved declaration to prime-sdk", async () => {
+        const [agentWithPrime] = await validateAgentTools(tmp, [
+            agent("prime-agent", ["ghost"], "prime-sdk"),
+        ]);
+        assert.equal(agentWithPrime.unavailable, undefined);
+    });
+    for (const name of ["web-search", "2fa", "class", "async", "await", "None", "True", "False", "two words", "echo\n"]) {
+        it(`marks an existing plugin with invalid Python name ${JSON.stringify(name)} unavailable`, async () => {
+            const invalid = agent(`invalid-${name.trim()}`, [name]);
+            writeFileSync(join(invalid.dir, "tools", `${name}.mjs`), 'throw new Error("must not import during discovery");\n');
+            const [validated] = await validateAgentTools(tmp, [invalid]);
+            assert.equal(validated.unavailable, `${JSON.stringify(name)} is not a valid Python tool name — use a Python identifier that is not a keyword, and rename the tool and its file.`);
+            assert.match(buildToolList([validated])[1].description ?? "", /^UNAVAILABLE/);
+        });
+    }
+    it("keeps valid Unicode identifiers and soft keywords available without importing plugins", async () => {
+        const names = ["echo2", "echo_value", "café", "工具", "match", "case", "type"];
+        const valid = agent("valid-names", names);
+        for (const name of names) {
+            writeFileSync(join(valid.dir, "tools", `${name}.mjs`), 'throw new Error("must not import during discovery");\n');
+        }
+        const [validated] = await validateAgentTools(tmp, [valid]);
+        assert.equal(validated.unavailable, undefined);
+    });
+    it("leaves non-Python names to the other backends", async () => {
+        for (const backend of ["prime", "prime-sdk"]) {
+            const [validated] = await validateAgentTools(tmp, [agent(`names-${backend}`, ["web-search", "class"], backend)]);
+            assert.equal(validated.unavailable, undefined);
+        }
+    });
+    it("rejects runtime names and names hidden by the REPL namespace", async () => {
+        for (const name of ["FINAL", "context", "_echo", "__debug__", "𝐜𝐨𝐧𝐭𝐞𝐱𝐭"]) {
+            const [reserved] = await validateAgentTools(tmp, [agent(`reserved-${name}`, [name])]);
+            assert.equal(reserved.unavailable, `"${name}" is a reserved REPL name — rename the tool and its file.`);
+        }
+    });
+    it("rejects declared tools that normalize to the same Python name", async () => {
+        const [validated] = await validateAgentTools(tmp, [agent("normalized-collision", ["echo", "ｅｃｈｏ"])]);
+        assert.match(validated.unavailable ?? "", /same Python name as "echo"/);
+    });
+    it("rejects a declared name that collides with a TOOLS.md tool", async () => {
+        const mikroDir = join(tmp, ".mikro");
+        mkdirSync(mikroDir, { recursive: true });
+        writeFileSync(join(mikroDir, "mikro.yaml"), "model:\n  provider: google\n  model: gemini-2.5-flash\n", "utf-8");
+        writeFileSync(join(mikroDir, "TOOLS.md"), "## echo\n```python\ndef echo(**kwargs):\n    return kwargs\n```\n", "utf-8");
+        const colliding = agent("collision", ["echo"]);
+        writeFileSync(join(colliding.dir, "tools", "echo.mjs"), "", "utf-8");
+        const [validated] = await validateAgentTools(tmp, [colliding]);
+        assert.equal(validated.unavailable, '"echo" collides with a TOOLS.md tool — rename one of them.');
+    });
+    it("preserves the first unavailability cause", async () => {
+        const prior = {
+            ...agent("bad-model", ["ghost"]),
+            unavailable: "model unavailable — repair the model.",
+        };
+        const [validated] = await validateAgentTools(tmp, [prior]);
+        assert.equal(validated.unavailable, prior.unavailable);
+    });
+});
+describe("MCP agent description truth", () => {
+    const microagent = (name, tools, backend, unavailable) => ({
+        name,
+        toolName: toToolName(name),
+        dir: `/tmp/${name}`,
+        summary: `${name} summary.`,
+        spec: {
+            dir: `/tmp/${name}`,
+            schemaVersion: 1,
+            toolsApi: 1,
+            shape: "loop",
+            tools,
+            extras: {},
+            ...(backend ? { backend } : {}),
+        },
+        ...(unavailable ? { unavailable } : {}),
+    });
+    it("ends every available and unavailable agent description with backend and tools", () => {
+        const tools = buildToolList([
+            microagent("plain", []),
+            microagent("sdk", ["search", "fetch"], "prime-sdk"),
+            microagent("broken", ["ghost"], undefined, "missing tools: ghost — repair it."),
+        ]);
+        assert.match(tools[1].description ?? "", /Backend: mikro\. Tools: none declared\.$/);
+        assert.match(tools[2].description ?? "", /Backend: prime-sdk\. Tools: search, fetch\.$/);
+        assert.match(tools[3].description ?? "", /Backend: mikro\. Tools: ghost\.$/);
+    });
+    it("leaves the generic tool description unchanged", () => {
+        const generic = buildToolList([])[0];
+        assert.equal(generic.description, "Launch a general-purpose mikro agent to handle a self-contained task " +
+            "autonomously (RLM loop: Python REPL plus recursion). Use it to offload " +
+            "work you would otherwise grind through inline — analysis over a large " +
+            "body of files, repeated extraction, wide searches. Give it a complete, " +
+            "standalone prompt: it runs to completion and returns a single final " +
+            "report, and cannot ask follow-up questions mid-run. The result carries " +
+            "the tokens and cost it used plus a session_id; pass that session_id back " +
+            "to this tool to continue the conversation.");
     });
 });
 /**

@@ -12,6 +12,8 @@
  *
  *   2. **Tool-dispatch mode** (mikro#78, `tools` config present) —
  *      multi-turn conversation loop with native function-calling:
+ *      construction throws `NoExposableToolsError` when no tool
+ *      remaining after `expose` has a schema.
  *
  *        • ToolRegistry schemas → pi-ai `Tool[]` → provider-native
  *          function declarations (Gemini functionDeclarations,
@@ -68,10 +70,10 @@ import type { ToolRegistry } from "./tool-registry.js";
  * the driver enters multi-turn tool-dispatch mode.
  */
 export interface RlmDriverToolsConfig {
-    /** Source of tool schemas the LLM will be offered. Must have at
-     *  least one tool with a schema (via `registry.register(name,
-     *  handler, schema)`) — otherwise the driver falls back to
-     *  one-shot mode for safety. */
+    /** Source of tool schemas the LLM will be offered. At least one
+     *  exposed tool must have a schema (via `registry.register(name,
+     *  handler, schema)`), otherwise construction throws
+     *  `NoExposableToolsError`. */
     readonly registry: ToolRegistry;
     /**
      * Hard cap on LLM calls per iteration (defense against infinite
@@ -123,6 +125,9 @@ export interface RlmDriverConfig {
      */
     readonly toolsLlm?: (context: PiContext, modelConfig: ModelConfig, signal?: AbortSignal) => Promise<PiAssistantMessage>;
 }
+export declare class NoExposableToolsError extends Error {
+    constructor(handlerNames: readonly string[]);
+}
 /**
  * Render the iteration's prompt. Keeps it intentionally simple — the
  * driver's job is to get a response surface, not to reproduce the
@@ -133,8 +138,9 @@ export interface RlmDriverConfig {
 export declare function formatRlmPrompt(config: RlmDriverConfig, req: IterationRequest): string;
 /**
  * Build an `IterationDriver` that drives the LLM. Legacy one-shot
- * mode when `tools` is absent; multi-turn tool-dispatch mode (mikro#78)
- * when `tools` is present and the registry has at least one schema.
+ * mode is used only when `tools` is absent. When `tools` is present,
+ * construction throws unless at least one tool remaining after
+ * `expose` has a schema; otherwise it uses multi-turn tool dispatch.
  */
 export declare function rlmDriver(config: RlmDriverConfig): IterationDriver;
 //# sourceMappingURL=rlm-driver.d.ts.map

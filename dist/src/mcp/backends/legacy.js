@@ -9,13 +9,38 @@
  * events and owns its own stopping semantics.
  */
 import { createEmitter } from "../../sdk/emitter.js";
+import { defaultReplTimeoutMs } from "../../repl.js";
 import { rlmLoop } from "../../rlm.js";
+import { loadPythonPlugins } from "../../sdk/python-plugin.js";
+import { loadPluginTools } from "../../sdk/tool-loader.js";
+import { createToolRegistry, toolRegistryAsResolver, } from "../../sdk/tool-registry.js";
+/** Keep Python plugin failure inside the enclosing REPL execute deadline. */
+export const PLUGIN_TIMEOUT_MARGIN_MS = 1_000;
 export class LegacyMikroBackend {
     loop;
+    loaders;
     constructor(options = {}) {
         this.loop = options.loop ?? rlmLoop;
+        this.loaders = {
+            loadPluginTools: options.loaders?.loadPluginTools ?? loadPluginTools,
+            loadPythonPlugins: options.loaders?.loadPythonPlugins ?? loadPythonPlugins,
+        };
     }
-    async run(_agent, request, emit) {
+    async run(agent, request, emit) {
+        const registry = createToolRegistry();
+        if (agent && agent.spec.tools.length > 0) {
+            await this.loaders.loadPluginTools(agent.spec, registry);
+            await this.loaders.loadPythonPlugins(agent.spec, registry, {
+                timeoutMs: Math.max(1, defaultReplTimeoutMs() - PLUGIN_TIMEOUT_MARGIN_MS),
+            });
+        }
+        const declaredTools = buildDeclaredToolDefs(registry);
+        const config = declaredTools.length > 0
+            ? { ...request.config, tools: [...request.config.tools, ...declaredTools] }
+            : request.config;
+        const tools = declaredTools.length > 0
+            ? toolRegistryAsResolver(registry)
+            : undefined;
         // Subscribe BEFORE the run so no early event is missed; rlmLoop closes the
         // emitter when it finishes, which ends this loop.
         const emitter = createEmitter();
@@ -45,9 +70,10 @@ export class LegacyMikroBackend {
         })();
         // output: "json" keeps rlmLoop off its stream-mode stdout path, which the
         // MCP transport owns — the same contract `src/acp/agent.ts` follows.
-        const result = await this.loop(request.query, request.context, request.config, {
+        const result = await this.loop(request.query, request.context, config, {
             output: "json",
             emitter,
+            ...(tools ? { tools } : {}),
             ...(request.maxIterations !== undefined ? { maxIterations: request.maxIterations } : {}),
             ...(request.maxOutputTokens !== undefined
                 ? { maxOutputTokens: request.maxOutputTokens }
@@ -70,6 +96,33 @@ export class LegacyMikroBackend {
             },
         };
     }
+}
+/** Build the Python `**kwargs` entry point for every loaded declared tool. */
+function buildDeclaredToolDefs(registry) {
+    return registry.list().map((name) => ({
+        name,
+        code: [
+            `def ${name}(**kwargs):`,
+            // A JSON string literal is also a Python string literal: quotes,
+            // backslashes, newlines, and control characters stay docstring data.
+            `    ${JSON.stringify(toolDocstring(registry.describe(name)))}`,
+            `    return call_tool(${JSON.stringify(name)}, kwargs)`,
+        ].join("\n"),
+    }));
+}
+function toolDocstring(schema) {
+    if (!schema)
+        return "(arguments undocumented — pass keyword arguments)";
+    const parts = [];
+    if (schema.description?.trim())
+        parts.push(schema.description.trim());
+    const properties = schema.parameters?.properties;
+    if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+        const names = Object.keys(properties);
+        if (names.length > 0)
+            parts.push(`Parameters: ${names.join(", ")}.`);
+    }
+    return parts.join(" ") || "(arguments undocumented — pass keyword arguments)";
 }
 /**
  * Resolve the run timeout. A delegated task can be long — especially a

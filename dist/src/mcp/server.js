@@ -45,6 +45,9 @@ import { resolve } from "node:path";
 import { applyModelRef, loadConfig } from "../config.js";
 import { loadContext } from "../context.js";
 import { EMPTY_RESPONSES_BUDGET_HIT, TIMEOUT_ANSWER } from "../rlm.js";
+import { REPL_RESERVED_NAMES } from "../repl.js";
+import { resolvePythonScript } from "../sdk/python-plugin.js";
+import { resolvePluginPath } from "../sdk/tool-loader.js";
 import { VERSION } from "../version.js";
 import { checkModelConfig } from "../llm.js";
 import { discoverAgents, splitModel } from "./agents.js";
@@ -149,10 +152,14 @@ function genericToolSchema() {
 /** Spawn-style description: what it is, how to prompt it, what comes back. */
 function describeAgent(agent) {
     const model = agent.spec.model ? ` Runs on ${agent.spec.model}.` : "";
-    if (agent.modelProblem) {
-        return (`UNAVAILABLE — "${agent.name}" cannot run: ${agent.modelProblem} ` +
-            `Fix the agent's model: pin or declare the provider in config, then retry. ` +
-            `${agent.summary}${model}`);
+    const backend = agent.spec.backend ?? "mikro";
+    const declaredTools = agent.spec.tools.length
+        ? `Tools: ${agent.spec.tools.join(", ")}.`
+        : "Tools: none declared.";
+    const suffix = `Backend: ${backend}. ${declaredTools}`;
+    if (agent.unavailable) {
+        return (`UNAVAILABLE — "${agent.name}" cannot run: ${agent.unavailable} ` +
+            `${agent.summary}${model} ${suffix}`);
     }
     return (`Launch the "${agent.name}" mikro agent to handle a task autonomously. ` +
         `${agent.summary}${model} Give it a complete, standalone prompt — it runs ` +
@@ -161,7 +168,8 @@ function describeAgent(agent) {
         `used plus a session_id; pass that session_id back to this tool to ` +
         `continue the conversation. ` +
         `(mikro microagent "${agent.name}", shape=${agent.spec.shape}` +
-        `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""})`);
+        `${agent.spec.thinking ? `, thinking=${agent.spec.thinking}` : ""}) ` +
+        suffix);
 }
 const GENERIC_DESCRIPTION = "Launch a general-purpose mikro agent to handle a self-contained task " +
     "autonomously (RLM loop: Python REPL plus recursion). Use it to offload " +
@@ -493,8 +501,92 @@ export async function validateAgentModels(cwd, agents) {
         const problem = checkModelConfig(applyAgent(config, agent).model);
         if (!problem)
             return agent;
-        return { ...agent, modelProblem: problem };
+        return {
+            ...agent,
+            unavailable: `${problem} Fix the agent's model: pin or declare the provider in config, then retry.`,
+        };
     });
+}
+// Python hard keywords only: soft keywords such as match, case, and type
+// remain valid function names. See Python's lexical-analysis reference.
+const PYTHON_KEYWORDS = new Set([
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break",
+    "class", "continue", "def", "del", "elif", "else", "except", "finally",
+    "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+    "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+]);
+/**
+ * Mark default-backend agents whose declared tools cannot be exposed safely.
+ * This is a resolution-only discovery probe: plugins are neither imported nor
+ * spawned here. A prior unavailability cause (notably a bad model pin) wins.
+ */
+export async function validateAgentTools(cwd, agents) {
+    if (agents.length === 0)
+        return [];
+    let collisions = new Set();
+    try {
+        const config = await loadConfig(cwd);
+        collisions = new Set(config.tools.map((tool) => tool.name.normalize("NFKC")));
+    }
+    catch {
+        // Model validation reports config failures. Tool-file and reserved-name
+        // checks remain useful even when TOOLS.md cannot be loaded.
+    }
+    return Promise.all(agents.map(async (agent) => {
+        if ((agent.spec.backend ?? "mikro") !== "mikro" || agent.unavailable) {
+            return agent;
+        }
+        const pythonNames = new Map();
+        for (const name of agent.spec.tools) {
+            // Use Python's Unicode identifier classes without a `$` anchor, which
+            // would also accept a trailing newline in JavaScript.
+            if (!/^[_\p{XID_Start}]/u.test(name) || /[^\p{XID_Continue}]/u.test(name) || PYTHON_KEYWORDS.has(name)) {
+                return {
+                    ...agent,
+                    unavailable: `${JSON.stringify(name)} is not a valid Python tool name — use a Python identifier that is not a keyword, and rename the tool and its file.`,
+                };
+            }
+            // Python normalizes identifiers; the REPL discards private names.
+            const pythonName = name.normalize("NFKC");
+            if (REPL_RESERVED_NAMES.has(pythonName) || pythonName.startsWith("_")) {
+                return {
+                    ...agent,
+                    unavailable: `"${name}" is a reserved REPL name — rename the tool and its file.`,
+                };
+            }
+            if (collisions.has(pythonName)) {
+                return {
+                    ...agent,
+                    unavailable: `"${name}" collides with a TOOLS.md tool — rename one of them.`,
+                };
+            }
+            const previous = pythonNames.get(pythonName);
+            if (previous !== undefined && previous !== name) {
+                return {
+                    ...agent,
+                    unavailable: `"${name}" has the same Python name as "${previous}" — rename one of the tools and its file.`,
+                };
+            }
+            pythonNames.set(pythonName, name);
+        }
+        const missing = [];
+        for (const name of agent.spec.tools) {
+            const [{ path }, pythonPath] = await Promise.all([
+                resolvePluginPath(agent.dir, name),
+                resolvePythonScript(agent.dir, name),
+            ]);
+            if (path === null && pythonPath === null)
+                missing.push(name);
+        }
+        if (missing.length === 0)
+            return agent;
+        const example = missing.length === 1 ? missing[0] : "<name>";
+        return {
+            ...agent,
+            unavailable: `missing tools: ${missing.join(", ")} — add tools/${example}.{mjs,js,py} ` +
+                `to ${agent.dir} or remove the declaration, then retry.`,
+        };
+    }));
 }
 function applyModelOverride(config, model) {
     if (!splitModel(model))
@@ -724,7 +816,7 @@ export async function runMcp(cwd = process.cwd()) {
     console.info = toStderr;
     console.debug = toStderr;
     console.warn = toStderr;
-    const registry = createAgentRegistry(async () => validateAgentModels(cwd, await discoverAgents(cwd)));
+    const registry = createAgentRegistry(async () => validateAgentTools(cwd, await validateAgentModels(cwd, await discoverAgents(cwd))));
     const sessions = new McpSessionStore();
     // Seed the baseline before connecting, so the first tools/list is not
     // reported as a change.
@@ -732,8 +824,8 @@ export async function runMcp(cwd = process.cwd()) {
     process.stderr.write(`mikro mcp: ${initial.agents.length} microagent${initial.agents.length === 1 ? "" : "s"} discovered` +
         `${initial.agents.length ? ` (${initial.agents.map((a) => a.name).join(", ")})` : ""}\n`);
     for (const agent of initial.agents) {
-        if (agent.modelProblem) {
-            process.stderr.write(`mikro mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.modelProblem}\n`);
+        if (agent.unavailable) {
+            process.stderr.write(`mikro mcp: agent "${agent.name}" is UNAVAILABLE — ${agent.unavailable}\n`);
         }
     }
     const server = new Server({ name: "mikro", version: VERSION }, 
@@ -793,10 +885,10 @@ export async function runMcp(cwd = process.cwd()) {
             sessions.evictTools([name]);
             return textResult(`Unknown tool: ${name}`, true);
         }
-        if (agent?.modelProblem) {
+        if (agent?.unavailable) {
             // Refuse up front: the run would die on its first model call with the
             // same message, after paying for context loading and a REPL spawn.
-            return textResult(`mikro ${name} cannot run: ${agent.modelProblem}`, true);
+            return textResult(`mikro ${name} cannot run: ${agent.unavailable}`, true);
         }
         const promptArg = readArg(args?.prompt);
         const queryArg = readArg(args?.query);

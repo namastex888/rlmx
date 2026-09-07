@@ -21,7 +21,7 @@ export { MAX_VALIDATE_ATTEMPTS, buildRetryHint, parseValidateMd, shouldRetry, va
 // ─── runAgent (G2b) ──────────────────────────────────────────────
 export { runAgent } from "./agent.js";
 // ─── rlmDriver (G2c — real LLM bridge + mikro#78 tool dispatch) ───
-export { formatRlmPrompt, rlmDriver } from "./rlm-driver.js";
+export { formatRlmPrompt, NoExposableToolsError, rlmDriver, } from "./rlm-driver.js";
 // ─── Agent spec + tool plugin loader (G3a) ───────────────────────
 export { loadAgentSpec, parseAgentSpec, resolveAgentPath, } from "./agent-spec.js";
 export { createToolRegistry, toolRegistryAsResolver, UnknownToolError, } from "./tool-registry.js";
