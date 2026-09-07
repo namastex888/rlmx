@@ -38,6 +38,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
+import { readPluginSchema } from "./tool-loader.js";
 export const DEFAULT_PYTHON_BIN = "python3";
 export const DEFAULT_TIMEOUT_MS = 30_000;
 /** Thrown when the Python script crashes or produces invalid JSON. */
@@ -169,7 +170,7 @@ async function fileExists(path) {
         return false;
     }
 }
-async function resolvePythonScript(agentDir, name) {
+export async function resolvePythonScript(agentDir, name) {
     const candidate = join(agentDir, "tools", `${name}.py`);
     if (await fileExists(candidate))
         return candidate;
@@ -203,12 +204,13 @@ export async function loadPythonPlugins(spec, registry, options = {}) {
             missing.push(name);
             continue;
         }
+        const schema = await readPluginSchema(name, scriptPath);
         registry.register(name, makePythonPluginHandler(name, scriptPath, {
             ...options,
             // Default cwd to the agent directory so plugins can use
             // relative paths (e.g. to sibling SYSTEM.md / scope fixtures).
             cwd: options.cwd ?? spec.dir,
-        }));
+        }), schema);
         loaded.push(name);
     }
     return { loaded, skipped, missing };

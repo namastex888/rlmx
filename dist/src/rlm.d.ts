@@ -14,6 +14,7 @@ import { type ChatMessage } from "./llm.js";
 import { type RLMResult } from "./output.js";
 import type { Logger } from "./logger.js";
 import { type EmitterAndStream } from "./sdk/emitter.js";
+import type { ToolResolver } from "./sdk/agent.js";
 import { type ValidateResult } from "./sdk/validate.js";
 /** `budgetHit` set by the consecutive-empty-response abort. */
 export declare const EMPTY_RESPONSES_BUDGET_HIT = "empty_responses";
@@ -43,7 +44,23 @@ export interface RLMOptions {
      * closes the emitter when it finishes.
      */
     emitter?: EmitterAndStream;
+    /** Declared-tool resolver exposed to Python through the REPL bridge. */
+    tools?: ToolResolver;
 }
+/**
+ * Add live SDK events and run-scoped cancellation to REPL tool dispatch.
+ *
+ * The REPL supplies its own signal to a ToolResolver. Declared plugins instead
+ * receive the enclosing run's signal so the loop timeout can interrupt them.
+ */
+export declare function bridgeToolResolver(resolver: ToolResolver, emitter: EmitterAndStream, options: {
+    readonly sessionId: string;
+    readonly selfTag: {
+        readonly correlationId?: string;
+        readonly parentRunId?: string;
+    };
+    readonly signal: AbortSignal;
+}): ToolResolver;
 /**
  * Build the system prompt from config, tools, criteria, and context metadata.
  */

@@ -276,14 +276,49 @@ describe("validateAgentTools", () => {
     assert.equal(agentWithPrime.unavailable, undefined);
   });
 
-  it("rejects FINAL and context as reserved REPL names", async () => {
-    for (const name of ["FINAL", "context"]) {
+  for (const name of ["web-search", "2fa", "class", "async", "await", "None", "True", "False", "two words", "echo\n"]) {
+    it(`marks an existing plugin with invalid Python name ${JSON.stringify(name)} unavailable`, async () => {
+      const invalid = agent(`invalid-${name.trim()}`, [name]);
+      writeFileSync(join(invalid.dir, "tools", `${name}.mjs`), 'throw new Error("must not import during discovery");\n');
+      const [validated] = await validateAgentTools(tmp, [invalid]);
+      assert.equal(
+        validated.unavailable,
+        `${JSON.stringify(name)} is not a valid Python tool name — use a Python identifier that is not a keyword, and rename the tool and its file.`
+      );
+      assert.match(buildToolList([validated])[1].description ?? "", /^UNAVAILABLE/);
+    });
+  }
+
+  it("keeps valid Unicode identifiers and soft keywords available without importing plugins", async () => {
+    const names = ["echo2", "echo_value", "café", "工具", "match", "case", "type"];
+    const valid = agent("valid-names", names);
+    for (const name of names) {
+      writeFileSync(join(valid.dir, "tools", `${name}.mjs`), 'throw new Error("must not import during discovery");\n');
+    }
+    const [validated] = await validateAgentTools(tmp, [valid]);
+    assert.equal(validated.unavailable, undefined);
+  });
+
+  it("leaves non-Python names to the other backends", async () => {
+    for (const backend of ["prime", "prime-sdk"] as const) {
+      const [validated] = await validateAgentTools(tmp, [agent(`names-${backend}`, ["web-search", "class"], backend)]);
+      assert.equal(validated.unavailable, undefined);
+    }
+  });
+
+  it("rejects runtime names and names hidden by the REPL namespace", async () => {
+    for (const name of ["FINAL", "context", "_echo", "__debug__", "𝐜𝐨𝐧𝐭𝐞𝐱𝐭"]) {
       const [reserved] = await validateAgentTools(tmp, [agent(`reserved-${name}`, [name])]);
       assert.equal(
         reserved.unavailable,
         `"${name}" is a reserved REPL name — rename the tool and its file.`
       );
     }
+  });
+
+  it("rejects declared tools that normalize to the same Python name", async () => {
+    const [validated] = await validateAgentTools(tmp, [agent("normalized-collision", ["echo", "ｅｃｈｏ"])]);
+    assert.match(validated.unavailable ?? "", /same Python name as "echo"/);
   });
 
   it("rejects a declared name that collides with a TOOLS.md tool", async () => {

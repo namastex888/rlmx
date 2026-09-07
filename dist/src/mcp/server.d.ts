@@ -200,6 +200,12 @@ export declare function applyAgent(config: MikroConfig, agent: Microagent): Mikr
  */
 export declare function validateAgentModels(cwd: string, agents: readonly Microagent[]): Promise<Microagent[]>;
 /**
+ * Mark default-backend agents whose declared tools cannot be exposed safely.
+ * This is a resolution-only discovery probe: plugins are neither imported nor
+ * spawned here. A prior unavailability cause (notably a bad model pin) wins.
+ */
+export declare function validateAgentTools(cwd: string, agents: readonly Microagent[]): Promise<Microagent[]>;
+/**
  * Result of a call that never reached a session: bad arguments, unknown tool,
  * unusable `session_id`. No `structuredContent`, because there is no session id
  * to put in it and the declared schema requires one — legal precisely because

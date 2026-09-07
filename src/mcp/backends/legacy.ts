@@ -138,7 +138,9 @@ function buildDeclaredToolDefs(registry: ToolRegistry): Array<{ name: string; co
     name,
     code: [
       `def ${name}(**kwargs):`,
-      `    \"\"\"${escapeDocstring(toolDocstring(registry.describe(name)))}\"\"\"`,
+      // A JSON string literal is also a Python string literal: quotes,
+      // backslashes, newlines, and control characters stay docstring data.
+      `    ${JSON.stringify(toolDocstring(registry.describe(name)))}`,
       `    return call_tool(${JSON.stringify(name)}, kwargs)`,
     ].join("\n"),
   }));
@@ -154,10 +156,6 @@ function toolDocstring(schema: ToolSchema | undefined): string {
     if (names.length > 0) parts.push(`Parameters: ${names.join(", ")}.`);
   }
   return parts.join(" ") || "(arguments undocumented — pass keyword arguments)";
-}
-
-function escapeDocstring(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\"\"\"/g, '\\\"\\\"\\\"');
 }
 
 /**

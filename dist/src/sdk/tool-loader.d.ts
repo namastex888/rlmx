@@ -28,7 +28,7 @@
  * Spec: `.genie/wishes/rlmx-sdk-upgrade/WISH.md` L24, L164-168.
  */
 import type { AgentSpec } from "./agent-spec.js";
-import type { ToolRegistry } from "./tool-registry.js";
+import type { ToolRegistry, ToolSchema } from "./tool-registry.js";
 export interface LoadResult {
     /** Names that were newly added to the registry. */
     readonly loaded: readonly string[];
@@ -47,6 +47,12 @@ export declare class InvalidPluginError extends Error {
     readonly pluginPath: string;
     constructor(toolName: string, pluginPath: string, reason: string);
 }
+export declare function resolvePluginPath(agentDir: string, name: string): Promise<{
+    path: string | null;
+    tried: readonly string[];
+}>;
+/** Read and validate the optional schema sidecar beside a resolved plugin. */
+export declare function readPluginSchema(toolName: string, pluginPath: string): Promise<ToolSchema | undefined>;
 export interface LoadOptions {
     /** When true, missing plugin files throw `MissingPluginError` instead
      *  of accumulating on `LoadResult.missing`. Default: false (non-fatal).

@@ -633,6 +633,15 @@ export async function validateAgentModels(
   });
 }
 
+// Python hard keywords only: soft keywords such as match, case, and type
+// remain valid function names. See Python's lexical-analysis reference.
+const PYTHON_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break",
+  "class", "continue", "def", "del", "elif", "else", "except", "finally",
+  "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+  "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+]);
+
 /**
  * Mark default-backend agents whose declared tools cannot be exposed safely.
  * This is a resolution-only discovery probe: plugins are neither imported nor
@@ -647,7 +656,7 @@ export async function validateAgentTools(
   let collisions = new Set<string>();
   try {
     const config = await loadConfig(cwd);
-    collisions = new Set(config.tools.map((tool) => tool.name));
+    collisions = new Set(config.tools.map((tool) => tool.name.normalize("NFKC")));
   } catch {
     // Model validation reports config failures. Tool-file and reserved-name
     // checks remain useful even when TOOLS.md cannot be loaded.
@@ -659,21 +668,42 @@ export async function validateAgentTools(
         return agent;
       }
 
+      const pythonNames = new Map<string, string>();
       for (const name of agent.spec.tools) {
-        if (REPL_RESERVED_NAMES.has(name)) {
+        // Use Python's Unicode identifier classes without a `$` anchor, which
+        // would also accept a trailing newline in JavaScript.
+        if (!/^[_\p{XID_Start}]/u.test(name) || /[^\p{XID_Continue}]/u.test(name) || PYTHON_KEYWORDS.has(name)) {
+          return {
+            ...agent,
+            unavailable:
+              `${JSON.stringify(name)} is not a valid Python tool name — use a Python identifier that is not a keyword, and rename the tool and its file.`,
+          };
+        }
+        // Python normalizes identifiers; the REPL discards private names.
+        const pythonName = name.normalize("NFKC");
+        if (REPL_RESERVED_NAMES.has(pythonName) || pythonName.startsWith("_")) {
           return {
             ...agent,
             unavailable:
               `"${name}" is a reserved REPL name — rename the tool and its file.`,
           };
         }
-        if (collisions.has(name)) {
+        if (collisions.has(pythonName)) {
           return {
             ...agent,
             unavailable:
               `"${name}" collides with a TOOLS.md tool — rename one of them.`,
           };
         }
+        const previous = pythonNames.get(pythonName);
+        if (previous !== undefined && previous !== name) {
+          return {
+            ...agent,
+            unavailable:
+              `"${name}" has the same Python name as "${previous}" — rename one of the tools and its file.`,
+          };
+        }
+        pythonNames.set(pythonName, name);
       }
 
       const missing: string[] = [];

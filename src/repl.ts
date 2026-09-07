@@ -220,8 +220,16 @@ export class REPL {
 
     // Inject custom tools if provided
     if (options.tools) {
-      for (const [, code] of Object.entries(options.tools)) {
-        await this.execute(code);
+      for (const [name, code] of Object.entries(options.tools)) {
+        try {
+          const result = await this.execute(code);
+          if (result.error) throw new Error(result.error);
+        } catch (err: unknown) {
+          // A partially installed namespace must never look ready, including
+          // when start() is reinstalling tools during crash recovery.
+          await this.stop().catch(() => {});
+          throw new Error(`Failed to install REPL tool ${JSON.stringify(name)}: ${errorString(err)}`);
+        }
       }
     }
 

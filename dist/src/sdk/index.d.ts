@@ -20,7 +20,7 @@ export { MAX_VALIDATE_ATTEMPTS, buildRetryHint, parseValidateMd, shouldRetry, va
 export type { ValidateResult, ValidateSchema } from "./validate.js";
 export { runAgent } from "./agent.js";
 export type { AgentConfig, IterationDriver, IterationRequest, IterationStep, ToolCallOutcome, ToolResolver, } from "./agent.js";
-export { formatRlmPrompt, rlmDriver } from "./rlm-driver.js";
+export { formatRlmPrompt, NoExposableToolsError, rlmDriver, } from "./rlm-driver.js";
 export type { RlmDriverConfig, RlmDriverToolsConfig, } from "./rlm-driver.js";
 export { loadAgentSpec, parseAgentSpec, resolveAgentPath, } from "./agent-spec.js";
 export type { AgentBudget, AgentScope, AgentSpec } from "./agent-spec.js";

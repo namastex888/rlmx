@@ -154,12 +154,24 @@ handlers own their deadline and should abort work cooperatively.
 
 ## Reserved names
 
+Declared tools on the default `mikro` backend must be Python identifiers,
+such as `search_web` or `café`, and cannot be Python keywords such as `class`
+or `await`. Names such as `web-search` and `2fa` are **UNAVAILABLE**. Leading
+underscores are also unavailable because the REPL does not persist private
+names. Python normalizes Unicode identifiers; names that normalize to the
+same tool or a reserved name collide too. Rename the declaration and its file
+together. The soft keywords `match`, `case`, and `type` remain valid names.
+
 Declared tools on the default backend cannot use Python REPL globals or names
 defined by the built-in battery files. This includes `FINAL`, `context`, and
 `call_tool`. Discovery advertises an agent with a reserved declaration as
 **UNAVAILABLE**; rename the tool and its file. A name that collides with a
 function from `.mikro/TOOLS.md` is also unavailable. This discovery check does
 not apply to `prime` or `prime-sdk`.
+
+If any custom tool code fails during REPL startup or recovery, the run fails
+with the tool name and Python error, and the partial REPL is stopped before
+the model can use it. Writing a diagnostic to stderr alone is not a failure.
 
 ## Timeouts on the default backend
 

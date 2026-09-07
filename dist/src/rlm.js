@@ -44,6 +44,50 @@ import { MAX_VALIDATE_ATTEMPTS, RETRY_HINT_FINAL, buildOutputSchemaSection, buil
 export const EMPTY_RESPONSES_BUDGET_HIT = "empty_responses";
 /** Exact `answer` returned by the wall-clock-timeout abort. */
 export const TIMEOUT_ANSWER = "Error: RLM query timed out";
+/**
+ * Add live SDK events and run-scoped cancellation to REPL tool dispatch.
+ *
+ * The REPL supplies its own signal to a ToolResolver. Declared plugins instead
+ * receive the enclosing run's signal so the loop timeout can interrupt them.
+ */
+export function bridgeToolResolver(resolver, emitter, options) {
+    return async (tool, args, _replSignal) => {
+        emitter.emit(makeEvent("ToolCallBefore", {
+            sessionId: options.sessionId,
+            ...options.selfTag,
+            iteration: 0,
+            tool,
+            args,
+        }));
+        const startMs = Date.now();
+        try {
+            const result = await resolver(tool, args, options.signal);
+            emitter.emit(makeEvent("ToolCallAfter", {
+                sessionId: options.sessionId,
+                ...options.selfTag,
+                iteration: 0,
+                tool,
+                result,
+                durationMs: Date.now() - startMs,
+                ok: true,
+            }));
+            return result;
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            emitter.emit(makeEvent("ToolCallAfter", {
+                sessionId: options.sessionId,
+                ...options.selfTag,
+                iteration: 0,
+                tool,
+                result: message,
+                durationMs: Date.now() - startMs,
+                ok: false,
+            }));
+            throw error;
+        }
+    };
+}
 const DEFAULT_OPTIONS = {
     maxIterations: 30,
     timeout: 300_000,
@@ -369,6 +413,13 @@ export async function rlmLoop(query, context, config, options = {}) {
         // cannot leak a dangling timer (nothing after setTimeout can throw).
         repl = new REPL();
         abortController = new AbortController();
+        if (opts.tools) {
+            repl.onToolRequest(bridgeToolResolver(opts.tools, emitter, {
+                sessionId: selfCorrelationId,
+                selfTag,
+                signal: abortController.signal,
+            }));
+        }
         timeoutHandle = setTimeout(() => {
             abortController.abort();
         }, opts.timeout);
