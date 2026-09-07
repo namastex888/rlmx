@@ -51,6 +51,9 @@ build step is needed on the consumer side):
 npm install github:automagik-dev/mikro   # package name: mikro
 ```
 
+This consumer install uses the consumer project’s npm manifest and lock; it is
+not covered by Mikro’s checkout guard before dependency mutation.
+
 ## Quick Start
 
 ```bash
@@ -430,13 +433,20 @@ agent: newline-delimited JSON-RPC over **stdin/stdout**, so any ACP client can
 drive a real `rlmLoop` and render its live event stream. No port, no daemon —
 the client spawns the process and owns its lifetime.
 
+Mikro checkouts use npm and the committed v3 `package-lock.json` as their sole
+dependency authority. Use `npm run deps:ci` for local installs: it rejects
+incoherent metadata and competing root locks before invoking `npm ci`. CI, the
+canonical installer, updater and launcher repair use the same guard before
+dependency recovery or installation. Deliberately running raw `npm ci` or
+`npm install` bypasses that protection and is unsupported by this guarantee.
+
 ### One-time: find your absolute launch command
 
 Every host entry needs the **absolute** path to the built CLI. Compute it once:
 
 ```bash
 # From a clone of this repo:
-npm ci && npm run build
+npm run deps:ci && npm run build
 node -e "console.log(require('path').resolve('dist/src/cli.js'))"
 # → /ABS/PATH/TO/mikro/dist/src/cli.js   ← use THIS everywhere below
 ```

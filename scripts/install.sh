@@ -67,21 +67,6 @@ echo "branch: $MIKRO_BRANCH"
 echo "dir:    $MIKRO_INSTALL_DIR"
 echo "bin:    $MIKRO_BIN_DIR"
 
-LEGACY_HOME="$HOME/.rlmx"
-if [ -d "$LEGACY_HOME" ] && [ ! -e "$HOME/.mikro" ]; then
-  echo "==> Migrating legacy $LEGACY_HOME -> $HOME/.mikro"
-  mv "$LEGACY_HOME" "$HOME/.mikro"
-  if [ -d "$HOME/.mikro/rlmx" ] && [ ! -e "$HOME/.mikro/mikro" ]; then
-    mv "$HOME/.mikro/rlmx" "$HOME/.mikro/mikro"
-  fi
-fi
-# The pre-rebrand symlink is either dangling or points at a legacy checkout;
-# either way it is dead once mikro is installed.
-if [ -L "$MIKRO_BIN_DIR/rlmx" ]; then
-  echo "==> Removing legacy $MIKRO_BIN_DIR/rlmx symlink"
-  rm -f "$MIKRO_BIN_DIR/rlmx"
-fi
-
 mkdir -p "$MIKRO_BIN_DIR" "$(dirname "$MIKRO_INSTALL_DIR")"
 
 if [ -d "$MIKRO_INSTALL_DIR/.git" ]; then
@@ -103,8 +88,26 @@ fi
 
 cd "$MIKRO_INSTALL_DIR"
 
+# Validate the selected checkout under the existing transaction before either
+# legacy rename can relocate dependencies. Repair repeats this check.
+node scripts/check-npm-authority.mjs
+
+LEGACY_HOME="$HOME/.rlmx"
+if [ -d "$LEGACY_HOME" ] && [ ! -e "$HOME/.mikro" ]; then
+  echo "==> Migrating legacy $LEGACY_HOME -> $HOME/.mikro"
+  mv "$LEGACY_HOME" "$HOME/.mikro"
+  if [ -d "$HOME/.mikro/rlmx" ] && [ ! -e "$HOME/.mikro/mikro" ]; then
+    mv "$HOME/.mikro/rlmx" "$HOME/.mikro/mikro"
+  fi
+fi
+# The pre-rebrand symlink is either dangling or points at a legacy checkout;
+# either way it is dead once mikro is installed.
+if [ -L "$MIKRO_BIN_DIR/rlmx" ]; then
+  echo "==> Removing legacy $MIKRO_BIN_DIR/rlmx symlink"
+  rm -f "$MIKRO_BIN_DIR/rlmx"
+fi
+
 # The inherited token is checked against the live owner before any recovery.
-# NMSTX-690: the shared repair seam must validate authority before mutation.
 node "$SCRIPT_DIR/../bin/install-state.mjs" finish "$MIKRO_INSTALL_DIR"
 
 # The launcher is dependency-free and repairs a half-installed node_modules

@@ -21,6 +21,7 @@
     "prepare": "node scripts/prepare.mjs",
     "bump-version": "node scripts/version.mjs",
     "check": "tsc --noEmit",
+    "deps:ci": "node scripts/check-npm-authority.mjs && npm ci",
     "install:local": "bash scripts/install.sh"
   },
   "dependencies": {

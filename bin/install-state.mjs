@@ -138,8 +138,8 @@ function repair(root, reinstall = false) {
   const needed = reinstall || state || !installComplete(root) || !existsSync(join(root, "dist/src/cli.js")) || existsSync(p.parked) || existsSync(legacyParked);
   if (!needed) return;
 
-  // NMSTX-690 seam: its authority guard must run HERE, under ownership and
-  // before any recovery, park, removal, npm invocation, or build mutation.
+  // Validate the selected checkout under ownership before dependency mutation.
+  run(root, process.execPath, [join(root, "scripts/check-npm-authority.mjs")]);
   if (existsSync(legacyParked) && !existsSync(p.parked)) renameSync(legacyParked, p.parked);
   if (existsSync(p.parked)) {
     if (!installComplete(root)) {

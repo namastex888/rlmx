@@ -70,6 +70,8 @@ async function fixture(actualCli = false) {
     await cp(join(ROOT, "bin"), join(remote, "bin"), { recursive: true });
     await mkdir(join(remote, "scripts"));
     await cp(join(ROOT, "scripts/install.sh"), join(remote, "scripts/install.sh"));
+    await cp(join(ROOT, "scripts/check-npm-authority.mjs"), join(remote, "scripts/check-npm-authority.mjs"));
+    await writeFile(join(remote, "package-lock.json"), JSON.stringify({ name: "fixture", version: "1.0.0", lockfileVersion: 3, packages: { "": { name: "fixture", version: "1.0.0" } } }));
     await writeFile(join(remote, "package.json"), '{"name":"fixture","version":"1.0.0","type":"module"}');
     await writeFile(join(remote, ".gitignore"), "node_modules\n");
     await writeFile(join(remote, "fixture-cli.mjs"), CLI);
