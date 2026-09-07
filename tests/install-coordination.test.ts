@@ -337,3 +337,34 @@ it("legacy-only default-prefix install refuses before creating state or mutating
     assert.equal(await readlink(join(oldBin, "rlmx")), oldLauncher);
   } finally { await f.close(); }
 });
+
+it("directory-symlink helper entry verifies ownership and runs the real installer", { timeout: 30_000, skip: process.platform === "win32" }, async () => {
+  const f = await fixture();
+  try {
+    const alias = join(f.area, "checkout-alias");
+    await symlink(f.checkout, alias, "dir");
+    for (const [root, flags] of [[f.checkout, []], [alias, []], [alias, ["--preserve-symlinks-main"]]] as const) {
+      const verify = spawnSync(process.execPath, [...flags, join(root, "bin/install-state.mjs"), "verify", root], { cwd: f.area, env: f.env, encoding: "utf8" });
+      assert.equal(verify.status, 1, `${root}: verify must execute, never silently succeed: ${verify.stdout}${verify.stderr}`);
+      assert.match(verify.stderr, /installer does not own the installation lock/);
+    }
+    const installer = start(f.area, "bash", [join(alias, "scripts/install.sh")], { ...f.env, MIKRO_INSTALL_DIR: alias, MIKRO_REPO_URL: f.remote });
+    f.processes.push(installer);
+    assert.equal((await installer.done).code, 0, installer.output());
+    const launched = start(f.area, process.execPath, [join(alias, "bin/mikro.mjs"), "--version"], f.env);
+    f.processes.push(launched);
+    assert.equal((await launched.done).code, 0, launched.output());
+    assert.match(launched.output(), /CLI_READY/);
+    assert.deepEqual(await f.events(), ["ci:start", "ci:end", "build:start", "build:end"]);
+  } finally { await f.close(); }
+});
+
+it("helper imports stay inert for eval, stdin and nonexistent entry paths", () => {
+  for (const entry of [undefined, "-", "/nonexistent-mikro-entry"]) {
+    const code = `process.argv = ${JSON.stringify(entry === undefined ? [process.execPath] : [process.execPath, entry])}; await import(${JSON.stringify(new URL("../../bin/install-state.mjs", import.meta.url).href)}); console.log('IMPORTED');`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "IMPORTED");
+    assert.equal(result.stderr, "");
+  }
+});

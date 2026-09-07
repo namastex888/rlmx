@@ -280,7 +280,12 @@ async function main(argv) {
     } else throw failure(`unknown installation operation: ${mode}`);
   });
 }
-if (process.argv[1] && resolve(process.argv[1]) === self) {
+function isDirectEntry() {
+  if (!process.argv[1]) return false;
+  try { return realpathSync(resolve(process.argv[1])) === realpathSync(self); }
+  catch { return false; } // stdin/eval or an imported module has no file entry.
+}
+if (isDirectEntry()) {
   main(process.argv.slice(2)).catch(error => {
     console.error(`mikro error: ${error.message}`);
     process.exitCode = error.exitCode ?? 1;
