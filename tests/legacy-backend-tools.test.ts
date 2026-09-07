@@ -15,7 +15,7 @@ import {
 } from "../src/mcp/backends/legacy.js";
 import type { RLMResult } from "../src/output.js";
 import { defaultReplTimeoutMs, REPL } from "../src/repl.js";
-import { bridgeToolResolver, type RLMOptions } from "../src/rlm.js";
+import { bridgeToolResolver, rlmLoop, type RLMOptions } from "../src/rlm.js";
 import { parseAgentSpec } from "../src/sdk/agent-spec.js";
 import { createEmitter } from "../src/sdk/emitter.js";
 import type { AgentEvent } from "../src/sdk/events.js";
@@ -182,6 +182,51 @@ describe("LegacyMikroBackend declared tools", () => {
     }
   });
 
+  for (const [name, description, extension] of [
+    ["echo_quote", 'Returns "OK"', "mjs"],
+    ["echo_triple", 'Returns """OK"""', "py"],
+    ["echo_slash", "Path C:\\tools\\", "mjs"],
+    ["café", "Unicode café ☕\nSecond line\r\nThird line", "py"],
+    ["match", "Control \u0000 characters", "mjs"],
+    ["case", "Plain description.", "py"],
+    ["type", "", "mjs"],
+  ]) {
+    it(`installs and executes ${name} with its sidecar docstring intact`, async (ctx) => {
+      if (!pythonAvailable) return ctx.skip("python3 not on PATH");
+      const dir = await mkdtemp(join(tmpdir(), "mikro-legacy-docstring-"));
+      const repl = new REPL();
+      try {
+        await mkdir(join(dir, "tools"));
+        await writeFile(
+          join(dir, "tools", `${name}.${extension}`),
+          extension === "py"
+            ? "import json, sys\njson.dump(json.load(sys.stdin), sys.stdout)\n"
+            : "export default async (args) => args;\n",
+        );
+        await writeFile(join(dir, "tools", `${name}.schema.json`), JSON.stringify({ description }));
+        const calls: LoopCall[] = [];
+        await new LegacyMikroBackend({ loop: capturingLoop(calls) }).run(
+          microagent(dir, [name]), await request(dir), () => {},
+        );
+        const { config, options } = calls[0]!;
+        assert.ok(options.tools);
+        repl.onToolRequest(options.tools);
+        await repl.start({ tools: Object.fromEntries(config.tools.map((tool) => [tool.name, tool.code])) });
+        const result = await repl.execute(
+          `import json\nprint(json.dumps([${name}.__doc__, ${name}(value="works")]))`,
+        );
+        assert.equal(result.error, undefined, result.stderr);
+        assert.deepEqual(JSON.parse(result.stdout.trim()), [
+          description || "(arguments undocumented — pass keyword arguments)",
+          { value: "works" },
+        ]);
+      } finally {
+        await repl.stop();
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
   it("turns a Python plugin timeout into RuntimeError and keeps the REPL alive", async (ctx) => {
     if (!pythonAvailable) {
       ctx.diagnostic("python3 not on PATH — skipping REPL subprocess test");
@@ -234,6 +279,35 @@ describe("LegacyMikroBackend declared tools", () => {
       await repl.stop();
       if (previous === undefined) delete process.env.MIKRO_REPL_TIMEOUT_MS;
       else process.env.MIKRO_REPL_TIMEOUT_MS = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("aborts the real loop and closes its emitter when a tool fails to install", async (ctx) => {
+    if (!pythonAvailable) return ctx.skip("python3 not on PATH");
+    const dir = await mkdtemp(join(tmpdir(), "mikro-legacy-install-failure-"));
+    const emitter = createEmitter();
+    const events: AgentEvent[] = [];
+    const consumer = (async () => {
+      for await (const event of emitter) events.push(event);
+    })();
+    try {
+      const { config } = await request(dir);
+      config.tools = [{ name: "broken", code: 'raise RuntimeError("installation failed")' }];
+      config.model = { provider: "invalid-install-test", model: "never-called" };
+      config.rtk = { enabled: "never" };
+      await assert.rejects(
+        rlmLoop("test", null, config, { emitter, output: "json" }),
+        /Failed to install REPL tool "broken"[\s\S]*RuntimeError: installation failed/,
+      );
+      assert.equal(emitter.closed, true);
+      await consumer;
+      assert.equal(events.some((event) => event.type === "IterationStart"), false);
+      assert.ok(events.some((event) => event.type === "Error" && event.error.message.includes("installation failed")));
+      assert.ok(events.some((event) => event.type === "SessionClose" && event.reason === "error"));
+    } finally {
+      emitter.close();
+      await consumer;
       await rm(dir, { recursive: true, force: true });
     }
   });

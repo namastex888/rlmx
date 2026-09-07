@@ -80,6 +80,7 @@ export interface PythonPluginExecResult {
  * utility) without running the discovery step.
  */
 export declare function makePythonPluginHandler(toolName: string, scriptPath: string, options?: PythonPluginOptions): ToolHandler;
+export declare function resolvePythonScript(agentDir: string, name: string): Promise<string | null>;
 export interface PythonLoadResult {
     readonly loaded: readonly string[];
     readonly skipped: readonly string[];

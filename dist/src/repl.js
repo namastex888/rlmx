@@ -38,7 +38,28 @@ const GEMINI_BATTERY_FUNCTION_NAMES = [
     "fetch_url",
     "generate_image",
 ];
-function defaultReplTimeoutMs() {
+/** Names supplied by the REPL runtime and battery modules. */
+export const REPL_RESERVED_NAMES = new Set([
+    "context",
+    "llm_query",
+    "rlm_query",
+    "llm_query_batched",
+    "rlm_query_batched",
+    "FINAL_VAR",
+    "FINAL",
+    "SHOW_VARS",
+    "call_tool",
+    ...BATTERY_FUNCTION_NAMES,
+    "run_cli",
+    ...GEMINI_BATTERY_FUNCTION_NAMES,
+    "pg_search",
+    "pg_slice",
+    "pg_sources",
+    "pg_time",
+    "pg_count",
+    "pg_query",
+]);
+export function defaultReplTimeoutMs() {
     const raw = process.env.MIKRO_REPL_TIMEOUT_MS;
     if (!raw)
         return 30_000;
@@ -47,6 +68,16 @@ function defaultReplTimeoutMs() {
         return 30_000;
     return parsed;
 }
+function errorString(value) {
+    try {
+        if (value instanceof Error)
+            return value.message;
+        return String(value);
+    }
+    catch {
+        return "Unknown tool bridge error";
+    }
+}
 export class REPL {
     process = null;
     readline = null;
@@ -54,7 +85,9 @@ export class REPL {
     pendingResolve = null;
     pendingReject = null;
     llmHandler = null;
+    toolHandler = null;
     messageBuffer = [];
+    toolSignal = new AbortController().signal;
     // Crash recovery state
     _startOptions = {};
     _recovering = false;
@@ -67,6 +100,10 @@ export class REPL {
     /** Set a handler for LLM requests from Python REPL code. */
     onLLMRequest(handler) {
         this.llmHandler = handler;
+    }
+    /** Set a handler for tool requests from Python REPL code. */
+    onToolRequest(handler) {
+        this.toolHandler = handler;
     }
     /** Start the Python REPL subprocess. */
     async start(options = {}) {
@@ -117,8 +154,18 @@ export class REPL {
         }
         // Inject custom tools if provided
         if (options.tools) {
-            for (const [, code] of Object.entries(options.tools)) {
-                await this.execute(code);
+            for (const [name, code] of Object.entries(options.tools)) {
+                try {
+                    const result = await this.execute(code);
+                    if (result.error)
+                        throw new Error(result.error);
+                }
+                catch (err) {
+                    // A partially installed namespace must never look ready, including
+                    // when start() is reinstalling tools during crash recovery.
+                    await this.stop().catch(() => { });
+                    throw new Error(`Failed to install REPL tool ${JSON.stringify(name)}: ${errorString(err)}`);
+                }
             }
         }
         // Load batteries for standard/full tool levels
@@ -366,6 +413,9 @@ export class REPL {
                         // Send response back to Python
                         this._send({ type: "llm_response", results });
                     }
+                    if (msg.type === "tool_request") {
+                        await this._handleToolRequest(msg);
+                    }
                     // Other message types during execution — ignore
                 }
             };
@@ -377,6 +427,49 @@ export class REPL {
                 }
             });
         });
+    }
+    /** Handle a tool request without allowing bridge failures to reject execute(). */
+    async _handleToolRequest(request) {
+        let response;
+        try {
+            if (!this.toolHandler) {
+                throw new Error("No tool handler configured");
+            }
+            const result = await this.toolHandler(request.tool, request.args, this.toolSignal);
+            const serialized = JSON.stringify(result);
+            if (serialized === undefined) {
+                throw new TypeError("Tool result is not JSON-serializable");
+            }
+            response = {
+                type: "tool_response",
+                ok: true,
+                result: JSON.parse(serialized),
+            };
+        }
+        catch (err) {
+            response = {
+                type: "tool_response",
+                ok: false,
+                error: errorString(err),
+            };
+        }
+        try {
+            this._send(response);
+        }
+        catch (sendErr) {
+            // A one-off write failure can still become a protocol-level error when
+            // the transport accepts this fallback. No send failure escapes here.
+            try {
+                this._send({
+                    type: "tool_response",
+                    ok: false,
+                    error: `Tool response send failed: ${errorString(sendErr)}`,
+                });
+            }
+            catch {
+                // The execute timeout/crash recovery path owns a dead transport.
+            }
+        }
     }
     async _injectContext(context) {
         let value;

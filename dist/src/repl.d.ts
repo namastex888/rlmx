@@ -12,6 +12,9 @@
 import type { ExecuteResult, LLMRequest } from "./ipc.js";
 import type { ToolsLevel } from "./config.js";
 import type { Logger } from "./logger.js";
+import type { ToolResolver } from "./sdk/agent.js";
+/** Names supplied by the REPL runtime and battery modules. */
+export declare const REPL_RESERVED_NAMES: ReadonlySet<string>;
 /** Options passed to REPL.start() */
 export interface REPLStartOptions {
     /** Context to inject (string, list, or dict serialized as JSON string). */
@@ -35,6 +38,7 @@ export interface REPLStartOptions {
 }
 /** Callback for handling LLM requests from the Python REPL. */
 export type LLMRequestHandler = (request: LLMRequest) => Promise<string[]>;
+export declare function defaultReplTimeoutMs(): number;
 export declare class REPL {
     private process;
     private readline;
@@ -42,7 +46,9 @@ export declare class REPL {
     private pendingResolve;
     private pendingReject;
     private llmHandler;
+    private toolHandler;
     private messageBuffer;
+    private readonly toolSignal;
     private _startOptions;
     private _recovering;
     private _batteriesUsed;
@@ -51,6 +57,8 @@ export declare class REPL {
     private _logger;
     /** Set a handler for LLM requests from Python REPL code. */
     onLLMRequest(handler: LLMRequestHandler): void;
+    /** Set a handler for tool requests from Python REPL code. */
+    onToolRequest(handler: ToolResolver): void;
     /** Start the Python REPL subprocess. */
     start(options?: REPLStartOptions): Promise<void>;
     /** Execute Python code in the REPL and return the result. */
@@ -77,6 +85,8 @@ export declare class REPL {
     private _nextMessage;
     private _waitForMessage;
     private _waitForExecuteResult;
+    /** Handle a tool request without allowing bridge failures to reject execute(). */
+    private _handleToolRequest;
     private _injectContext;
 }
 //# sourceMappingURL=repl.d.ts.map
