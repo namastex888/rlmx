@@ -14,7 +14,7 @@
     "examples"
   ],
   "scripts": {
-    "build": "tsc && cp src/benchmark-data.json dist/src/ && rm -rf dist/src/templates && cp -r src/templates dist/src/templates",
+    "build": "tsc && chmod +x dist/src/cli.js && cp src/benchmark-data.json dist/src/ && rm -rf dist/src/templates && cp -r src/templates dist/src/templates",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "test": "node --test dist/tests/*.test.js",
