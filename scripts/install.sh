@@ -9,12 +9,57 @@ MIKRO_BRANCH="${MIKRO_BRANCH:-main}"
 MIKRO_INSTALL_DIR="${MIKRO_INSTALL_DIR:-$HOME/.mikro/mikro}"
 MIKRO_BIN_DIR="${MIKRO_BIN_DIR:-$HOME/.local/bin}"
 
+# Refuse this legacy-only default-prefix case before coordination creates the
+# new parent. Automatic migration must not silently become a fresh install.
+# Moving an active legacy checkout needs a separate migration protocol.
+if [ "${MIKRO_INSTALL_DIR%/}" = "$HOME/.mikro/mikro" ] && [ -d "$HOME/.rlmx" ] && [ ! -e "$HOME/.mikro" ]; then
+  cat >&2 <<'MIGRATION'
+error: legacy ~/.rlmx installation found; automatic migration is deferred.
+No installation data or launcher symlinks have been changed.
+Stop all mikro, updater, npm and build processes using the legacy checkout.
+Then migrate explicitly, only while the destination is absent:
+  test ! -e "$HOME/.mikro" && mv "$HOME/.rlmx" "$HOME/.mikro"
+  if [ -d "$HOME/.mikro/rlmx" ] && [ ! -e "$HOME/.mikro/mikro" ]; then
+    mv "$HOME/.mikro/rlmx" "$HOME/.mikro/mikro"
+  fi
+Rerun this installer to refresh the checkout and recreate the mikro launcher.
+MIGRATION
+  exit 1
+fi
+
 if ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "$MIKRO_REPO_URL" HEAD >/dev/null 2>&1; then
   if GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "$MIKRO_FALLBACK_REPO_URL" HEAD >/dev/null 2>&1; then
     echo "==> $MIKRO_REPO_URL is not reachable; using $MIKRO_FALLBACK_REPO_URL"
     MIKRO_REPO_URL="$MIKRO_FALLBACK_REPO_URL"
   fi
 fi
+
+# curl | bash has no local companion module yet. Obtain a temporary checkout
+# before touching the destination; its dependency-free coordinator then owns
+# selection, cleanup, installation and build in the destination checkout.
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/../bin/install-state.mjs" ]; then
+  BOOTSTRAP_DIR="$(mktemp -d)"
+  trap 'rm -rf "$BOOTSTRAP_DIR"' EXIT
+  git clone --depth 1 --branch "$MIKRO_BRANCH" "$MIKRO_REPO_URL" "$BOOTSTRAP_DIR/checkout"
+  if [ ! -f "$BOOTSTRAP_DIR/checkout/bin/install-state.mjs" ]; then
+    echo "error: selected checkout lacks the coordinated installer" >&2
+    exit 1
+  fi
+  export MIKRO_REPO_URL MIKRO_FALLBACK_REPO_URL MIKRO_BRANCH MIKRO_INSTALL_DIR MIKRO_BIN_DIR
+  bash "$BOOTSTRAP_DIR/checkout/scripts/install.sh"
+  exit $?
+fi
+
+# The mutex and recovery journal survive checkout reset/clean.
+mkdir -p "$(dirname "$MIKRO_INSTALL_DIR")"
+if [ "${1:-}" != "--under-install-lock" ] || [ -z "${MIKRO_INSTALL_TOKEN:-}" ]; then
+  exec node "$SCRIPT_DIR/../bin/install-state.mjs" installer "$MIKRO_INSTALL_DIR" "$SCRIPT_DIR/install.sh"
+fi
+node "$SCRIPT_DIR/../bin/install-state.mjs" verify "$MIKRO_INSTALL_DIR"
 
 echo "==> Installing mikro"
 echo "repo:   $MIKRO_REPO_URL"
@@ -46,7 +91,7 @@ if [ -d "$MIKRO_INSTALL_DIR/.git" ]; then
   # FETCH_HEAD, not origin/<branch>: works for any branch and for checkouts
   # whose fetch refspec does not track remote branches.
   git -C "$MIKRO_INSTALL_DIR" checkout -f -B "$MIKRO_BRANCH" FETCH_HEAD
-  git -C "$MIKRO_INSTALL_DIR" clean -fd
+  git -C "$MIKRO_INSTALL_DIR" clean -fd -e node_modules.prev/
 else
   if [ -e "$MIKRO_INSTALL_DIR" ]; then
     echo "error: $MIKRO_INSTALL_DIR exists but is not a git checkout" >&2
@@ -58,11 +103,9 @@ fi
 
 cd "$MIKRO_INSTALL_DIR"
 
-echo "==> Installing dependencies"
-npm ci --include=dev --no-audit --no-fund --fetch-timeout=120000 --fetch-retries=3
-
-echo "==> Building"
-npm run build
+# The inherited token is checked against the live owner before any recovery.
+# NMSTX-690: the shared repair seam must validate authority before mutation.
+node "$SCRIPT_DIR/../bin/install-state.mjs" finish "$MIKRO_INSTALL_DIR"
 
 # The launcher is dependency-free and repairs a half-installed node_modules
 # before loading the CLI, so a failed `mikro update` never strands the binary.
@@ -70,4 +113,4 @@ ln -sfn "$MIKRO_INSTALL_DIR/bin/mikro.mjs" "$MIKRO_BIN_DIR/mikro"
 chmod +x "$MIKRO_INSTALL_DIR/bin/mikro.mjs" "$MIKRO_INSTALL_DIR/dist/src/cli.js"
 
 echo "==> Installed"
-"$MIKRO_BIN_DIR/mikro" --version
+node -p "'mikro v' + require('./package.json').version"
