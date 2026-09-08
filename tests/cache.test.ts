@@ -44,7 +44,6 @@ function makeConfig(overrides: Partial<MikroConfig> = {}): MikroConfig {
     gemini: overrides.gemini ?? { thinkingLevel: null, googleSearch: false, urlContext: false, codeExecution: false, computerUse: false, mapsGrounding: false, fileSearch: false, mediaResolution: null },
     output: overrides.output ?? { schema: null },
     storage: overrides.storage ?? { enabled: "auto", mode: "persistent", dataDir: "~/.mikro/data", port: 0, chunkSize: null, chunkUtilization: 0.6, charsPerToken: 4 },
-    rtk: overrides.rtk ?? { enabled: "auto" },
     providers: overrides.providers ?? [],
     validate: overrides.validate ?? null,
   };

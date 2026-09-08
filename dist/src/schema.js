@@ -220,7 +220,6 @@ export const MIKRO_CLI_SCHEMA = {
     exitCodes: [
         { code: 0, meaning: "success" },
         { code: 1, meaning: "general error, validation error, missing query, missing provider key warning, or empty-response abort" },
-        { code: 2, meaning: "rtk.enabled=always but rtk is not installed" },
         { code: 130, meaning: "terminated by SIGINT" },
         { code: 143, meaning: "terminated by SIGTERM" },
     ],

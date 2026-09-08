@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createToolRegistry, loadAgentSpec, loadPluginTools, parseValidateMd, registerRtkTool, runAgent, } from "../src/sdk/index.js";
+import { createToolRegistry, loadAgentSpec, loadPluginTools, parseValidateMd, runAgent, } from "../src/sdk/index.js";
 const testDir = dirname(fileURLToPath(import.meta.url));
 const EXAMPLE_DIR = join(testDir, "..", "..", "examples", "agents", "research-agent");
 async function drain(stream) {
@@ -27,13 +27,8 @@ const fakeFetch = async (args) => {
 describe("example: research-agent (G4)", () => {
     it("loads agent.yaml + tools + validates a good payload", async () => {
         const spec = await loadAgentSpec(EXAMPLE_DIR);
-        assert.deepEqual(new Set(spec.tools), new Set(["fetch-url", "rtk"]));
+        assert.deepEqual(new Set(spec.tools), new Set(["fetch-url"]));
         const registry = createToolRegistry();
-        // Auto-register RTK when available — no-op otherwise, so the
-        // test is portable. The plugin loader will still see `rtk` in
-        // agent.yaml and either skip (pre-registered) or register the
-        // file (when present).
-        await registerRtkTool(registry);
         const loadResult = await loadPluginTools(spec, registry);
         assert.ok(loadResult.loaded.includes("fetch-url"));
         // Swap the real fetch for the fake so the test stays hermetic.

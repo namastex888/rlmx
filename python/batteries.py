@@ -263,24 +263,16 @@ def reduce_query(results, prompt):
 
 
 def run_cli(cmd, *args, timeout=10, check=False, input=None):
-    """Run a CLI command, auto-prefixing `rtk` when available + enabled.
+    """Run a CLI command directly with captured text output.
 
-    When RTK (Rust Token Killer) is installed and `rtk.enabled` in mikro.yaml
-    resolves to "on" for this session, the command is silently wrapped as
-    `rtk <cmd> <args...>` to gain 60-90% token compression on captured output.
-    Otherwise the command runs directly.
+    Returns a dict: {returncode, stdout, stderr}.
 
-    Returns a dict: {returncode, stdout, stderr, rtk_prefixed}.
-
-    A timeout or OS-level failure never raises out of the REPL — it maps to
-    returncode=-1 with the error text in stderr.
+    Timeouts and missing commands map to returncode=-1 with error text in
+    stderr. With check=True, a nonzero exit raises CalledProcessError.
     """
-    import os
     import subprocess
 
-    mode = os.environ.get("_MIKRO_RTK_MODE", "off")
-    prefixed = mode == "on" and cmd != "rtk"
-    full_cmd = ["rtk", cmd, *args] if prefixed else [cmd, *args]
+    full_cmd = [cmd, *args]
 
     try:
         r = subprocess.run(
@@ -294,7 +286,6 @@ def run_cli(cmd, *args, timeout=10, check=False, input=None):
             "returncode": r.returncode,
             "stdout": r.stdout,
             "stderr": r.stderr,
-            "rtk_prefixed": prefixed,
         }
         if check and r.returncode != 0:
             raise subprocess.CalledProcessError(
@@ -306,12 +297,10 @@ def run_cli(cmd, *args, timeout=10, check=False, input=None):
             "returncode": -1,
             "stdout": "",
             "stderr": f"timeout: {e}",
-            "rtk_prefixed": prefixed,
         }
     except FileNotFoundError as e:
         return {
             "returncode": -1,
             "stdout": "",
             "stderr": f"command not found: {e}",
-            "rtk_prefixed": prefixed,
         }

@@ -20,7 +20,6 @@ import { extractCodeBlocks, detectFinal, formatIterationResult, } from "./parser
 import { emitStreamEvent, logVerbose } from "./output.js";
 import { BudgetTracker } from "./budget.js";
 import { isGoogleProvider } from "./gemini.js";
-import { detectRtk } from "./rtk-detect.js";
 import { createEmitter } from "./sdk/emitter.js";
 import { createRecursionBridge } from "./sdk/recursion-bridge.js";
 import { createMetricsRecorder } from "./sdk/metrics.js";
@@ -451,24 +450,12 @@ export async function rlmLoop(query, context, config, options = {}) {
         for (const tool of config.tools) {
             toolsMap[tool.name] = tool.code;
         }
-        // Resolve RTK mode once per run. `always` without an install is a config error.
-        const rtk = await detectRtk();
-        if (config.rtk.enabled === "always" && !rtk.available) {
-            throw new Error("mikro config: rtk.enabled=always but rtk is not installed on PATH.");
-        }
-        const rtkEnabled = config.rtk.enabled === "always" ||
-            (config.rtk.enabled === "auto" && rtk.available);
-        if (rtkEnabled && opts.verbose) {
-            const v = rtk.version ?? "unknown";
-            process.stderr.write(`[rtk:auto] RTK ${v} detected — CLI subprocesses via run_cli() will auto-prefix rtk.\n`);
-        }
         await repl.start({
             context: replContext,
             tools: Object.keys(toolsMap).length > 0 ? toolsMap : undefined,
             loadGeminiBatteries: isGoogleProvider(config.model.provider) && (config.toolsLevel === "standard" || config.toolsLevel === "full"),
             loadPgBatteries: !!opts.storageMode,
             toolsLevel: config.toolsLevel,
-            rtkEnabled,
         });
         // Set up LLM request handler for REPL IPC — pass storage for pg_* routes
         repl.onLLMRequest(async (request) => {

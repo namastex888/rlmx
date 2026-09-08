@@ -71,15 +71,6 @@ export interface StorageConfig {
     chunkUtilization: number;
     charsPerToken: number;
 }
-/** RTK (Rust Token Killer) integration config */
-export interface RtkConfig {
-    /**
-     * auto   — use RTK when `which rtk` succeeds; fall through otherwise.
-     * always — require RTK; throw at REPL startup if absent.
-     * never  — disable the run_cli auto-prefix entirely.
-     */
-    enabled: "auto" | "always" | "never";
-}
 /** System-prompt assembly config */
 export interface PromptConfig {
     /**
@@ -117,8 +108,6 @@ export interface MikroConfig {
     output: OutputConfig;
     /** Storage configuration for pgserve */
     storage: StorageConfig;
-    /** RTK (Rust Token Killer) integration */
-    rtk: RtkConfig;
     /**
      * System-prompt assembly settings.
      *
@@ -181,7 +170,6 @@ export interface ValidateConfig {
     readonly rawBlock: string;
 }
 export declare const DEFAULT_STORAGE_CONFIG: StorageConfig;
-export declare const DEFAULT_RTK_CONFIG: RtkConfig;
 export declare const DEFAULT_PROMPT_CONFIG: PromptConfig;
 /**
  * Inclusive bounds for `temperature`, shared by all three surfaces that accept

@@ -1,8 +1,7 @@
 # Example — research-agent
 
-Multi-tool agent that demonstrates the full Wish B feature set:
+Research agent that demonstrates the SDK feature set:
 - **Tool plugin loader** resolves `fetch-url` from `tools/`.
-- **RTK native** auto-registers when `rtk` is on PATH (no config needed).
 - **Permission hooks** block internal hosts before the fetch fires.
 - **Validate primitive** enforces a structured output schema via
   `VALIDATE.md` with retry-once on malformed payloads.
@@ -10,7 +9,7 @@ Multi-tool agent that demonstrates the full Wish B feature set:
 
 ```
 examples/agents/research-agent/
-├── agent.yaml           # tools: [fetch-url, rtk]
+├── agent.yaml           # tools: [fetch-url]
 ├── SYSTEM.md            # agent role + instructions
 ├── VALIDATE.md          # JSON schema fence the validator enforces
 ├── tools/
@@ -29,7 +28,6 @@ const dir = join(import.meta.dir, "..", "examples", "agents", "research-agent");
 const spec = await sdk.loadAgentSpec(dir);
 
 const registry = sdk.createToolRegistry();
-await sdk.registerRtkTool(registry); // auto — no-op if rtk absent
 await sdk.loadPluginTools(spec, registry);
 
 const validateMd = await readFile(join(dir, "VALIDATE.md"), "utf8");

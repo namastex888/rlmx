@@ -18,7 +18,6 @@ import { EMPTY_RESPONSES_BUDGET_HIT, rlmLoop } from "./rlm.js";
 import { outputResult, buildStats, emitStats } from "./output.js";
 import { createLogger } from "./logger.js";
 import { checkPythonVersion } from "./detect.js";
-import { detectRtk } from "./rtk-detect.js";
 import { estimateTokens, validateContextSize } from "./cache.js";
 import { runBatch } from "./batch.js";
 import { loadSettings, saveSettings, injectApiKeysToEnv, formatValue, parseSettingValue, getSettingsPath, type GlobalSettings } from "./settings.js";
@@ -69,7 +68,7 @@ Usage:
   mikro batch <file> [options]    Bulk interrogation from questions file
   mikro benchmark <mode> [options]  Run benchmarks (cost or oolong)
   mikro stats [options]           Query run history and cost breakdowns
-  mikro doctor                    Health check: providers, RTK, config
+  mikro doctor                    Health check: providers, config
   mikro update [--force]          Fetch latest main commit for a git install
   mikro migrate [--apply]         Find legacy rlmx artifacts (config dirs, .mcp.json,
                                   Claude plugin registration) and rewrite them for mikro.
@@ -856,12 +855,11 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
 }
 
 /**
- * mikro doctor — report health of providers, RTK, and config.
+ * mikro doctor — report health of providers and config.
  *
  * Exit codes:
  *   0 = all nominal
  *   1 = at least one provider API key is missing (warning)
- *   2 = rtk.enabled=always but rtk is not installed (error)
  */
 async function runDoctor(): Promise<void> {
   const { createRequire } = await import("node:module");
@@ -873,9 +871,6 @@ async function runDoctor(): Promise<void> {
   const configDir = process.cwd();
   const config = await loadConfig(configDir);
   applySettingsModelOverrides(config);
-
-  // Detect RTK (cached for process lifetime)
-  const rtk = await detectRtk();
 
   // Settings file presence
   const settingsPath = getSettingsPath();
@@ -914,17 +909,6 @@ async function runDoctor(): Promise<void> {
   const customProviders = config.providers;
   const configuredModelProblem = checkModelConfig(config.model);
 
-  // RTK mode text
-  const rtkMode = config.rtk.enabled;
-  let rtkModeText: string;
-  if (rtkMode === "always") {
-    rtkModeText = rtk.available ? "always (enabled)" : "always (MISSING — error)";
-  } else if (rtkMode === "never") {
-    rtkModeText = "never (disabled)";
-  } else {
-    rtkModeText = rtk.available ? "auto (enabled)" : "auto (disabled)";
-  }
-
   // ─── Output ────────────────────────────────────────────
   console.log(`mikro ${pkg.version}`);
   console.log(`node: ${process.version}`);
@@ -959,29 +943,11 @@ async function runDoctor(): Promise<void> {
   console.log(`  ${config.model.provider}/${config.model.model} : ${configuredModelProblem ? `UNRESOLVABLE — ${configuredModelProblem}` : "resolves"}`);
   console.log("");
 
-  console.log("RTK (token optimizer):");
-  console.log(`  installed : ${rtk.available ? "yes" : "no"}`);
-  if (rtk.available) {
-    console.log(`  version   : ${rtk.version ?? "(unknown)"}`);
-    if (rtk.path) console.log(`  path      : ${rtk.path}`);
-  }
-  console.log(`  mode      : ${rtkModeText}`);
-  console.log("");
-
   console.log("Config:");
   console.log(`  ${settingsPath} (${settingsExists ? "exists" : "missing"})`);
   console.log(`  Active template: ${activeTemplate}`);
 
   // ─── Exit code ────────────────────────────────────────
-  // Exit 2 — rtk.enabled=always but rtk is absent (error, overrides warning)
-  if (rtkMode === "always" && !rtk.available) {
-    console.error("");
-    console.error(
-      "Error: mikro config: rtk.enabled=always but rtk is not installed on PATH."
-    );
-    process.exit(2);
-  }
-
   // Exit 1 — at least one provider API key missing (warning)
   if (anyKeyMissing) {
     process.exit(1);

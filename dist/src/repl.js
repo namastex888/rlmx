@@ -116,7 +116,6 @@ export class REPL {
             env: {
                 ...process.env,
                 PYTHONUNBUFFERED: "1",
-                _MIKRO_RTK_MODE: options.rtkEnabled ? "on" : "off",
             },
         });
         this.readline = createInterface({ input: this.process.stdout });

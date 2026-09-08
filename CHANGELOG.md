@@ -155,6 +155,16 @@ release is the git commit on `main`. See `docs/release-contract.md`.
 
 ### Changed
 
+- **Removed built-in RTK integration (breaking SDK/Python API change).**
+  `run_cli` executes commands directly and returns only `returncode`, `stdout`,
+  and `stderr`; the `rtk_prefixed` result field is removed. The SDK no longer
+  exports `registerRtkTool` or its option/argument/result types, config no longer
+  exposes `RtkConfig` / `DEFAULT_RTK_CONFIG`, and `REPLStartOptions.rtkEnabled`
+  is removed. Existing `rtk:` YAML sections are ignored. `mikro doctor` no
+  longer probes or reports RTK, and its RTK-specific exit code 2 is removed.
+  Remove these API references from consumers; use `run_cli` or a custom tool
+  plugin for command execution.
+
 - **`rlmDriver` now rejects an empty model-facing tool set** (SDK public API).
   Previously, supplying `tools` when every selected handler lacked a schema
   silently chose one-shot execution. It now throws the exported
