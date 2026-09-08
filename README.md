@@ -304,7 +304,6 @@ import { sdk } from "mikro";
 
 const spec = await sdk.loadAgentSpec("./my-agent");
 const registry = sdk.createToolRegistry();
-await sdk.registerRtkTool(registry);
 await sdk.loadPluginTools(spec, registry);
 
 for await (const ev of sdk.runAgent({
@@ -335,7 +334,7 @@ Deeper dives:
 
 - [`docs/sdk-overview.md`](docs/sdk-overview.md) — layered architecture + design principles.
 - [`docs/events.md`](docs/events.md) — the 13-event catalogue + emitter contract.
-- [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes, RTK integration.
+- [`docs/tool-authoring.md`](docs/tool-authoring.md) — TS/MJS + Python plugin recipes.
 - [`docs/agent-yaml-schema.md`](docs/agent-yaml-schema.md) — `agent.yaml` field reference.
 - [`examples/agents/`](examples/agents/README.md) — **the** microagent recipe tree: `explore`, `explore-r`, `codebase-qa`, `changelog`, `log-triage`, plus the three runnable SDK walk-throughs with tests (hello-world / research-agent / brain-triage).
 - [`examples/`](examples/) — `mikro.yaml` configuration examples (tauri-docs, paper-review, cag-*, gemini-*), which are not microagents.
@@ -588,58 +587,16 @@ A `tool_call_update` for an ordinary REPL execution instead carries
 width-bounded and secret-redacted at the translator boundary before they cross
 the web boundary.
 
-## RTK Integration (token savings)
+## Running CLI commands
 
-mikro auto-detects [RTK](https://github.com/rtk-ai/rtk) and routes CLI subprocess calls through it when available, for 60-90% token savings on tool outputs.
-
-### Install RTK (optional)
-
-```bash
-brew install rtk                                                                             # macOS
-curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh    # Linux/macOS
-cargo install --git https://github.com/rtk-ai/rtk                                            # Rust
-```
-
-### How it works
-
-- In your `.mikro/TOOLS.md`, use `run_cli(cmd, *args)` instead of raw `subprocess.run(...)`
-- When RTK is installed, `run_cli` transparently prefixes with `rtk` → filtered output
-- When RTK is absent, `run_cli` passes through unchanged — no behavior break
-
-### Configuration
-
-```yaml
-# .mikro/mikro.yaml
-rtk:
-  enabled: auto   # auto | always | never (default: auto)
-```
-
-- `auto` — use RTK when detected on PATH, otherwise pass through (fail-open)
-- `always` — require RTK; `mikro doctor` exits **2** if it is missing
-- `never` — disable prefix even when RTK is installed
-
-### Verify
-
-```bash
-mikro doctor         # shows RTK status (installed version + mode)
-rtk gain            # shows token savings from mikro + other RTK integrations
-```
-
-> `mikro doctor` exits **1** if **any** of the six provider keys it checks is
-> unset, so a healthy single-provider install still exits non-zero. Read its
-> output; don't script it as a pass/fail gate. Only exit 2 means a real config
-> error (`rtk.enabled=always` with rtk absent).
-
-### Before / after
+Use `run_cli(cmd, *args, timeout=10, check=False, input=None)` in the Python
+REPL or `.mikro/TOOLS.md` to run a command directly and capture its output.
+It returns `{returncode, stdout, stderr}`. Timeouts and missing commands return
+`returncode: -1` with an error in `stderr`; `check=True` raises on nonzero exits.
 
 ```python
-# Before — raw subprocess, full git output consumes tokens
-import subprocess
-out = subprocess.run(["git", "log", "-n", "10"], capture_output=True, text=True).stdout
-
-# After — run_cli auto-routes through rtk when available
-r = run_cli("git", "log", "-n", "10")
-out = r["stdout"]   # filtered + compact; ~60-90% fewer tokens
+r = run_cli("git", "log", "-n", "10", "--oneline")
+out = r["stdout"]
 ```
 
 ## How It Works
@@ -823,7 +780,7 @@ silently ignored.
 
 | File | Purpose |
 |------|---------|
-| `.mikro/mikro.yaml` | Model, context, budget, cache, storage, rtk, gemini config. Its presence is what makes mikro use the directory at all; without it you get built-in defaults. |
+| `.mikro/mikro.yaml` | Model, context, budget, cache, storage, gemini config. Its presence is what makes mikro use the directory at all; without it you get built-in defaults. |
 | `.mikro/SYSTEM.md` | System prompt sent to the LLM. Default: the RLM paper prompt. |
 | `.mikro/CRITERIA.md` | Output format criteria appended to the system prompt. |
 | `.mikro/TOOLS.md` | Custom Python functions injected into the REPL namespace. |
@@ -953,7 +910,7 @@ mikro batch <file> [options]                         Bulk interrogation from a q
 mikro benchmark <mode> [options]                     Run benchmarks (cost or oolong)
 mikro stats [options]                                Query run history and cost breakdowns
 mikro config <set|get|list|delete|path>              Manage ~/.mikro/settings.json
-mikro doctor                                         Health check: providers, RTK, config
+mikro doctor                                         Health check: providers, config
 mikro update [--force]                               Fetch latest main commit for a git install
 mikro acp                                            Run as a stdio ACP agent (EXPERIMENTAL)
 mikro mcp [--dir <path>]                             Run as a stdio MCP server (agents as tools)
@@ -996,8 +953,11 @@ mikro stats [--run <id>] [--costs] [--tools] [--since 24h|7d|30m] [--output json
 ```
 
 Exit codes: `0` success · `1` general/validation error, missing query, missing
-provider key, or empty-response abort · `2` `rtk.enabled=always` with rtk absent
-· `130` SIGINT · `143` SIGTERM.
+provider key, or empty-response abort · `130` SIGINT · `143` SIGTERM.
+
+`mikro doctor` exits `1` if any of the six provider keys it checks is unset,
+so a healthy single-provider install can still exit nonzero. Read its output
+for the individual provider status.
 
 ## Output Modes
 

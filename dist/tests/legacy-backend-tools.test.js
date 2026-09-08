@@ -239,7 +239,6 @@ describe("LegacyMikroBackend declared tools", () => {
             const { config } = await request(dir);
             config.tools = [{ name: "broken", code: 'raise RuntimeError("installation failed")' }];
             config.model = { provider: "invalid-install-test", model: "never-called" };
-            config.rtk = { enabled: "never" };
             await assert.rejects(rlmLoop("test", null, config, { emitter, output: "json" }), /Failed to install REPL tool "broken"[\s\S]*RuntimeError: installation failed/);
             assert.equal(emitter.closed, true);
             await consumer;

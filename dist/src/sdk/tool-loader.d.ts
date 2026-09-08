@@ -21,7 +21,7 @@
  *
  * Plugins that aren't listed in `AgentSpec.tools` are NEVER loaded, so
  * a stray file under `tools/` can't sneak in. Conversely, tool names
- * already present in the registry (e.g. RTK pre-registered at startup)
+ * already present in the registry (e.g. consumer-supplied at startup)
  * are skipped silently — the agent.yaml declaration is a *request*,
  * not an override.
  *
@@ -32,7 +32,7 @@ import type { ToolRegistry, ToolSchema } from "./tool-registry.js";
 export interface LoadResult {
     /** Names that were newly added to the registry. */
     readonly loaded: readonly string[];
-    /** Names already in the registry (pre-registered, e.g. RTK). */
+    /** Names already in the registry (pre-registered by the consumer). */
     readonly skipped: readonly string[];
     /** Tool names missing a plugin file — a warning, not a fatal error. */
     readonly missing: readonly string[];
@@ -63,7 +63,7 @@ export interface LoadOptions {
  * Load every plugin listed in `spec.tools` into `registry`. Returns a
  * breakdown of loaded / skipped / missing names so callers can log
  * the outcome. Tool names already in the registry are skipped (not
- * overridden) — pre-registered handlers (RTK, consumer-supplied)
+ * overridden) — consumer-supplied handlers
  * always win.
  */
 export declare function loadPluginTools(spec: AgentSpec, registry: ToolRegistry, options?: LoadOptions): Promise<LoadResult>;

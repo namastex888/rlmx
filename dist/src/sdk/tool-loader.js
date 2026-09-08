@@ -21,7 +21,7 @@
  *
  * Plugins that aren't listed in `AgentSpec.tools` are NEVER loaded, so
  * a stray file under `tools/` can't sneak in. Conversely, tool names
- * already present in the registry (e.g. RTK pre-registered at startup)
+ * already present in the registry (e.g. consumer-supplied at startup)
  * are skipped silently — the agent.yaml declaration is a *request*,
  * not an override.
  *
@@ -129,7 +129,7 @@ function coerceDefaultExport(mod, toolName, pluginPath) {
  * Load every plugin listed in `spec.tools` into `registry`. Returns a
  * breakdown of loaded / skipped / missing names so callers can log
  * the outcome. Tool names already in the registry are skipped (not
- * overridden) — pre-registered handlers (RTK, consumer-supplied)
+ * overridden) — consumer-supplied handlers
  * always win.
  */
 export async function loadPluginTools(spec, registry, options = {}) {

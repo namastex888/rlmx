@@ -91,16 +91,6 @@ export interface StorageConfig {
   charsPerToken: number;
 }
 
-/** RTK (Rust Token Killer) integration config */
-export interface RtkConfig {
-  /**
-   * auto   — use RTK when `which rtk` succeeds; fall through otherwise.
-   * always — require RTK; throw at REPL startup if absent.
-   * never  — disable the run_cli auto-prefix entirely.
-   */
-  enabled: "auto" | "always" | "never";
-}
-
 /** System-prompt assembly config */
 export interface PromptConfig {
   /**
@@ -140,8 +130,6 @@ export interface MikroConfig {
   output: OutputConfig;
   /** Storage configuration for pgserve */
   storage: StorageConfig;
-  /** RTK (Rust Token Killer) integration */
-  rtk: RtkConfig;
   /**
    * System-prompt assembly settings.
    *
@@ -252,10 +240,6 @@ export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
   chunkSize: null,
   chunkUtilization: 0.6,
   charsPerToken: 4,
-};
-
-export const DEFAULT_RTK_CONFIG: RtkConfig = {
-  enabled: "auto",
 };
 
 export const DEFAULT_PROMPT_CONFIG: PromptConfig = {
@@ -383,9 +367,6 @@ interface RawYamlConfig {
     "chunk-size"?: number | null;
     "chunk-utilization"?: number;
     "chars-per-token"?: number;
-  };
-  rtk?: {
-    enabled?: string;
   };
   prompt?: {
     "append-stop-protocol"?: boolean;
@@ -710,17 +691,6 @@ function parseYamlConfig(
     charsPerToken,
   };
 
-  // Parse rtk config
-  const rawRtkEnabled = cfg.rtk?.enabled ?? DEFAULT_RTK_CONFIG.enabled;
-  if (!["auto", "always", "never"].includes(rawRtkEnabled)) {
-    throw new Error(
-      `Invalid rtk.enabled "${rawRtkEnabled}" in mikro.yaml. Must be one of: auto, always, never.`
-    );
-  }
-  const rtk: RtkConfig = {
-    enabled: rawRtkEnabled as RtkConfig["enabled"],
-  };
-
   // Parse prompt config
   const rawAppendStopProtocol =
     cfg.prompt?.["append-stop-protocol"] ?? DEFAULT_PROMPT_CONFIG.appendStopProtocol;
@@ -734,8 +704,8 @@ function parseYamlConfig(
   };
 
   // Parse temperature. A bare `temperature:` key parses as YAML null, which is
-  // the same "unset" the absent key means — the convention `rtk.enabled` and
-  // `prompt.append-stop-protocol` already follow. Anything else must be a
+  // the same "unset" the absent key means — the convention
+  // `prompt.append-stop-protocol` already follows. Anything else must be a
   // number in range: `temperature: hot` reaching the wire is a run that either
   // errors deep inside a provider SDK or, worse, gets silently normalised.
   const rawTemperature = cfg.temperature ?? null;
@@ -755,7 +725,6 @@ function parseYamlConfig(
     gemini,
     output,
     storage,
-    rtk,
     prompt,
     temperature: rawTemperature,
     providers,
@@ -782,7 +751,6 @@ function defaultConfig(dir: string, providers: CustomProviderConfig[] = []): Mik
     gemini: { ...DEFAULT_GEMINI_CONFIG },
     output: { ...DEFAULT_OUTPUT_CONFIG },
     storage: { ...DEFAULT_STORAGE_CONFIG },
-    rtk: { ...DEFAULT_RTK_CONFIG },
     prompt: { ...DEFAULT_PROMPT_CONFIG },
     temperature: null,
     providers,

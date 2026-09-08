@@ -107,7 +107,7 @@ const SIDE_EFFECTING = new RegExp(
     // state-changing binaries
     String.raw`(^|[\s;|&(])(sudo|rm|mv|cp|mkdir|rmdir|touch|chmod|chown|ln|tee|kill|pkill|systemctl|launchctl|docker|kubectl|helm|terraform|ansible|apt|apt-get|dpkg|snap|pip|pipx|scp|rsync|ssh|gh|glab|\./[\w.-]+)\b`,
     // git verbs that write (history interrogation is the read half only)
-    String.raw`(^|[\s;|&(])(rtk\s+)?git\s+(add|commit|reset|checkout|switch|restore|stash|clean|push|pull|fetch|merge|rebase|cherry-pick|revert|worktree|apply|am|init|config|remote|gc|prune|mv|rm)\b`,
+    String.raw`(^|[\s;|&(])git\s+(add|commit|reset|checkout|switch|restore|stash|clean|push|pull|fetch|merge|rebase|cherry-pick|revert|worktree|apply|am|init|config|remote|gc|prune|mv|rm)\b`,
     // redirection into a file
     String.raw`(^|[^0-9&<>=-])>>?\s*[^&\s|]`,
   ].join("|")
@@ -144,7 +144,7 @@ const FAMILIES = [
     note: "read-only, self-contained questions over a repo's history",
     match: (name, cmd) =>
       name === "Bash" &&
-      /(^|[\s;|&(])(rtk\s+)?git\s+(log|show|diff|blame|shortlog|rev-list|describe|whatchanged|tag|status|ls-files)\b/.test(
+      /(^|[\s;|&(])git\s+(log|show|diff|blame|shortlog|rev-list|describe|whatchanged|tag|status|ls-files)\b/.test(
         cmd
       ),
   },
@@ -172,7 +172,7 @@ const FAMILIES = [
     match: (name, cmd) =>
       /^(Read|Grep|Glob|LS)$/i.test(name) ||
       (name === "Bash" &&
-        /(^|[\s;|&(])(rtk\s+)?(rg|grep|find|ls|cat|head|tail|sed|awk|wc|tree|jq|fd)\b/.test(cmd)),
+        /(^|[\s;|&(])(rg|grep|find|ls|cat|head|tail|sed|awk|wc|tree|jq|fd)\b/.test(cmd)),
   },
   {
     id: "side-effecting-shell",
@@ -244,9 +244,9 @@ let skipped = 0;
  */
 function verbOf(name, cmd) {
   if (!cmd) return name;
-  const git = /(^|[\s;|&(])(?:rtk\s+)?git\s+([a-z-]+)/.exec(cmd);
+  const git = /(^|[\s;|&(])git\s+([a-z-]+)/.exec(cmd);
   if (git) return `git ${git[2]}`;
-  const first = /(^|[\s;|&(])(?:rtk\s+)?([a-z0-9_.-]+)/.exec(cmd);
+  const first = /(^|[\s;|&(])([a-z0-9_.-]+)/.exec(cmd);
   return first ? first[2] : name;
 }
 

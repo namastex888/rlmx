@@ -21,18 +21,18 @@
      - llm_query_batched(prompts, model=None)
      - rlm_query(prompt, model=None)
      - rlm_query_batched(prompts, model=None)
-     - run_cli(cmd, *args, timeout=10) — run an external CLI, auto-prefixes
-       `rtk` when RTK is installed for 60-90% token savings
+     - run_cli(cmd, *args, timeout=10) — run an external CLI directly
+       and capture stdout, stderr, and its exit code
      - context (the loaded context data)
      - Any standard Python library
 
      Add your tools below this comment block. -->
 
-## run_cli_example (demonstrates RTK auto-prefix)
+## run_cli_example
 
 ```python
 def git_status():
-    """Show compact git status. Auto-routes through RTK when installed."""
+    """Show compact git status."""
     r = run_cli("git", "status", "--short")
     return r["stdout"]
 ```

@@ -186,33 +186,21 @@ tools-level: standard
     await rm(dir, { recursive: true });
   });
 
-  it("defaults rtk.enabled to auto when mikro.yaml omits it", async () => {
+  it("ignores the removed rtk config section, including legacy always mode", async () => {
     dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
-    await makeConfig(dir, "model:\n  provider: anthropic\n");
-    const cfg = await loadConfig(dir);
-    assert.equal(cfg.rtk.enabled, "auto");
+    for (const enabled of ["auto", "always", "never", "banana"]) {
+      await makeConfig(dir, `rtk:\n  enabled: ${enabled}\n`);
+      const cfg = await loadConfig(dir);
+      assert.equal("rtk" in cfg, false);
+      assert.equal(cfg.configSource, "yaml");
+    }
     await rm(dir, { recursive: true });
   });
 
-  it("accepts rtk.enabled: never", async () => {
-    dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
-    await makeConfig(dir, "rtk:\n  enabled: never\n");
-    const cfg = await loadConfig(dir);
-    assert.equal(cfg.rtk.enabled, "never");
-    await rm(dir, { recursive: true });
-  });
-
-  it("rejects invalid rtk.enabled", async () => {
-    dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
-    await makeConfig(dir, "rtk:\n  enabled: banana\n");
-    await assert.rejects(() => loadConfig(dir), /Invalid rtk\.enabled/);
-    await rm(dir, { recursive: true });
-  });
-
-  it("default config (no yaml) sets rtk.enabled to auto", async () => {
+  it("does not include removed integration settings in defaults", async () => {
     dir = await mkdtemp(join(tmpdir(), "mikro-cfg-"));
     const cfg = await loadConfig(dir);
-    assert.equal(cfg.rtk.enabled, "auto");
+    assert.equal("rtk" in cfg, false);
     assert.equal(cfg.configSource, "defaults");
     await rm(dir, { recursive: true });
   });
@@ -238,7 +226,7 @@ tools-level: standard
   /**
    * A bare `append-stop-protocol:` key parses as YAML null. Null-as-unset is
    * the deliberate convention here — the agent.yaml parser (`parsePrompt` in
-   * `src/sdk/agent-spec.ts`) and `rtk.enabled` treat null the same way — so
+   * `src/sdk/agent-spec.ts`) treats null the same way — so
    * it falls back to the default rather than erroring.
    */
   it("treats a null prompt.append-stop-protocol as unset (default true)", async () => {

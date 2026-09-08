@@ -26,8 +26,6 @@ export { formatRlmPrompt, NoExposableToolsError, rlmDriver, } from "./rlm-driver
 export { loadAgentSpec, parseAgentSpec, resolveAgentPath, } from "./agent-spec.js";
 export { createToolRegistry, toolRegistryAsResolver, UnknownToolError, } from "./tool-registry.js";
 export { InvalidPluginError, MissingPluginError, loadPluginTools, } from "./tool-loader.js";
-// ─── RTK plugin (G3a) ────────────────────────────────────────────
-export { registerRtkTool } from "./rtk-plugin.js";
 // ─── Python plugin loader (G3b) ──────────────────────────────────
 export { DEFAULT_PYTHON_BIN, DEFAULT_TIMEOUT_MS as PYTHON_DEFAULT_TIMEOUT_MS, loadPythonPlugins, makePythonPluginHandler, PythonPluginError, PythonPluginTimeoutError, } from "./python-plugin.js";
 // ─── Metrics (G3a) ───────────────────────────────────────────────

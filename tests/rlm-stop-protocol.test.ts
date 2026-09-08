@@ -53,7 +53,6 @@ function makeConfig(overrides: Partial<MikroConfig> = {}): MikroConfig {
       chunkUtilization: 0.6,
       charsPerToken: 4,
     },
-    rtk: { enabled: "auto" },
     prompt: { appendStopProtocol: true },
     validate: overrides.validate ?? null,
     providers: [],

@@ -197,9 +197,8 @@ the handler when its operation needs one.
   The `prime` subprocess backend's behavior is unchanged.
 
 Gemini code-execution paths outside mikro's REPL do not see bridged tools.
-Also, `registerRtkTool()` and PATH detection can pre-register RTK for SDK
-consumers, but they do not satisfy default-backend discovery: declaring `rtk`
-without `tools/rtk.{mjs,js,py}` is `missing` and therefore **UNAVAILABLE**.
+Declaring a tool without a matching `tools/<name>.{mjs,js,py}` file on the
+default backend is `missing` and therefore **UNAVAILABLE**.
 
 JavaScript plugins use dynamic ESM `import()`, so repeated loads of the same
 resolved URL in one Node process reuse the module cache. Restart the process
@@ -220,44 +219,9 @@ This live, non-CI check reproduces the original declared-tool path:
 4. Confirm stderr or the JSONL log contains at least one declared-tool
    `ToolCallBefore`, nested inside the surrounding `tool: "repl"` event pair.
 
-## RTK as a first-class tool
-
-[RTK](https://crates.io/crates/rtk) ("rust token killer") is a CLI
-token-optimised subprocess runner. The SDK can register it as a
-drop-in tool named `"rtk"`.
-
-```ts
-const registered = await sdk.registerRtkTool(registry);
-// returns true when rtk is on PATH + the registry gained the tool,
-// false when rtk is absent (no-op — agents can still declare `rtk`
-// in agent.yaml and it will simply land on result.missing).
-```
-
-Handler signature:
-
-```ts
-const result = await registry.get("rtk")!(
-	{ cmd: ["cargo", "test", "--quiet"] },
-	ctx,
-);
-// result: { stdout, stderr, exitCode, durationMs }
-```
-
-Options:
-
-| option | default | purpose |
-|---|---|---|
-| `name` | `"rtk"` | Override — useful for "sandboxed vs raw" splits. |
-| `forceRegister` | `false` | Register the tool even when `rtk` is absent. Handler then fails at call time. |
-
-Pre-registered RTK takes precedence over any `tools/rtk.{mjs,js,py}`
-file on disk — the plugin loader reports such files on
-`result.skipped`. This mirrors the general **pre-registered handlers
-always win** invariant.
-
 ## Handler context
 
-Every handler (TS / Python / RTK) receives a `ToolContext`:
+Every handler (TS / Python) receives a `ToolContext`:
 
 ```ts
 interface ToolContext {

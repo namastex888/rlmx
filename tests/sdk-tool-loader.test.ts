@@ -164,14 +164,14 @@ describe("loadPluginTools — TS plugin loader (G3a, .mjs/.js only)", () => {
 
 	it("skips tools already present in the registry (pre-registered wins)", async () => {
 		const agentDir = join(root, "skip");
-		await writePlugin(agentDir, "rtk", `export default async () => "file";\n`);
+		await writePlugin(agentDir, "custom-tool", `export default async () => "file";\n`);
 		const registry = createToolRegistry();
-		registry.register("rtk", async () => "pre-registered");
-		const result = await loadPluginTools(specFor(agentDir, ["rtk"]), registry);
-		assert.deepEqual([...result.skipped], ["rtk"]);
+		registry.register("custom-tool", async () => "pre-registered");
+		const result = await loadPluginTools(specFor(agentDir, ["custom-tool"]), registry);
+		assert.deepEqual([...result.skipped], ["custom-tool"]);
 		assert.deepEqual([...result.loaded], []);
-		assert.equal(await registry.get("rtk")!({}, {
-			tool: "rtk",
+		assert.equal(await registry.get("custom-tool")!({}, {
+			tool: "custom-tool",
 			sessionId: "",
 			iteration: 0,
 			signal: new AbortController().signal,

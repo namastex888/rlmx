@@ -10,7 +10,6 @@ import {
 	loadPluginTools,
 	parseValidateMd,
 	type PermissionHook,
-	registerRtkTool,
 	runAgent,
 	type ToolHandler,
 } from "../src/sdk/index.js";
@@ -42,14 +41,9 @@ const fakeFetch: ToolHandler = async (args) => {
 describe("example: research-agent (G4)", () => {
 	it("loads agent.yaml + tools + validates a good payload", async () => {
 		const spec = await loadAgentSpec(EXAMPLE_DIR);
-		assert.deepEqual(new Set(spec.tools), new Set(["fetch-url", "rtk"]));
+		assert.deepEqual(new Set(spec.tools), new Set(["fetch-url"]));
 
 		const registry = createToolRegistry();
-		// Auto-register RTK when available — no-op otherwise, so the
-		// test is portable. The plugin loader will still see `rtk` in
-		// agent.yaml and either skip (pre-registered) or register the
-		// file (when present).
-		await registerRtkTool(registry);
 		const loadResult = await loadPluginTools(spec, registry);
 		assert.ok(loadResult.loaded.includes("fetch-url"));
 
