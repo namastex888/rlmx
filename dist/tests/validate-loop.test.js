@@ -65,7 +65,6 @@ function makeConfig(overrides = {}) {
             chunkUtilization: 0.6,
             charsPerToken: 4,
         },
-        rtk: { enabled: "auto" },
         prompt: { appendStopProtocol: true },
         validate: null,
         providers: [],

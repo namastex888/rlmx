@@ -85,7 +85,7 @@ export interface RlmDriverToolsConfig {
      * Optional list of tool names to expose to the LLM. When
      * omitted, every registry tool with a schema is exposed. Useful
      * when the agent.yaml whitelist is stricter than the registry
-     * (e.g. RTK pre-registered tools you don't want this agent to
+     * (e.g. pre-registered tools you don't want this agent to
      * see). Order is preserved in the tools[] array.
      */
     readonly expose?: readonly string[];

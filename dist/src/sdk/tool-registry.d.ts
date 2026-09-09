@@ -3,7 +3,7 @@
  *
  * Maps tool names declared in `agent.yaml` (`tools: [...]`) to
  * in-process handler functions the SDK can dispatch to. Both
- * consumer-registered handlers (e.g. RTK plugin) and loader-registered
+ * consumer-registered handlers and loader-registered
  * handlers (TS plugins from `<agent-dir>/tools/<name>.ts`) land in
  * the same registry.
  *

@@ -14,13 +14,14 @@
     "examples"
   ],
   "scripts": {
-    "build": "tsc && cp src/benchmark-data.json dist/src/ && rm -rf dist/src/templates && cp -r src/templates dist/src/templates",
+    "build": "tsc && chmod +x dist/src/cli.js && cp src/benchmark-data.json dist/src/ && rm -rf dist/src/templates && cp -r src/templates dist/src/templates",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "test": "node --test dist/tests/*.test.js",
     "prepare": "node scripts/prepare.mjs",
     "bump-version": "node scripts/version.mjs",
     "check": "tsc --noEmit",
+    "deps:ci": "node scripts/check-npm-authority.mjs && npm ci",
     "install:local": "bash scripts/install.sh"
   },
   "dependencies": {

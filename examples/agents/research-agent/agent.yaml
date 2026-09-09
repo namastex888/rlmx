@@ -6,7 +6,6 @@ model: gemini-2.5-flash
 
 tools:
   - fetch-url
-  - rtk
 
 system: SYSTEM.md
 

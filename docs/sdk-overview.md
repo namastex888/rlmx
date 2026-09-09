@@ -45,7 +45,7 @@ consumers opt in. The default MCP backend also uses the shared declared-tool
 loaders and REPL bridge; the ad-hoc `mikro "query"` path remains compatible.
 
 **Pluggable seams.** When SDK and default-backend behavior meet existing mikro
-pieces (LLM transport, RTK detection, the REPL), they share loaders and resolver
+pieces (LLM transport, the REPL), they share loaders and resolver
 contracts. The REPL tool bridge is additive to the existing LLM-request path.
 
 **Events as the observability contract.** The 10 wish-spec event types
@@ -78,7 +78,6 @@ use `runAgent()` is a deliberately separate slice.
 | `src/sdk/tool-registry.ts` | `ToolRegistry`, `ToolSchema`, `createToolRegistry`, `toolRegistryAsResolver`, `UnknownToolError`, `ToolHandler`. |
 | `src/sdk/tool-loader.ts` | `loadPluginTools` (`.mjs` / `.js`), sidecar schema loading, `resolvePluginPath`, `MissingPluginError`, `InvalidPluginError`. |
 | `src/sdk/python-plugin.ts` | `loadPythonPlugins`, sidecar schema loading, `resolvePythonScript`, `makePythonPluginHandler`, `PythonPluginError`, `PythonPluginTimeoutError`. |
-| `src/sdk/rtk-plugin.ts` | `registerRtkTool`. |
 | `src/sdk/metrics.ts` | `IterationMetrics`, `createMetricsRecorder`. |
 
 Public entry: `import { sdk } from "mikro"`.

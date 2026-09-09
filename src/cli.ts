@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { execFileSync } from "node:child_process";
 import {
   applyModelRef,
   applyTemperatureOverride,
@@ -19,7 +18,6 @@ import { EMPTY_RESPONSES_BUDGET_HIT, rlmLoop } from "./rlm.js";
 import { outputResult, buildStats, emitStats } from "./output.js";
 import { createLogger } from "./logger.js";
 import { checkPythonVersion } from "./detect.js";
-import { detectRtk } from "./rtk-detect.js";
 import { estimateTokens, validateContextSize } from "./cache.js";
 import { runBatch } from "./batch.js";
 import { loadSettings, saveSettings, injectApiKeysToEnv, formatValue, parseSettingValue, getSettingsPath, type GlobalSettings } from "./settings.js";
@@ -70,7 +68,7 @@ Usage:
   mikro batch <file> [options]    Bulk interrogation from questions file
   mikro benchmark <mode> [options]  Run benchmarks (cost or oolong)
   mikro stats [options]           Query run history and cost breakdowns
-  mikro doctor                    Health check: providers, RTK, config
+  mikro doctor                    Health check: providers, config
   mikro update [--force]          Fetch latest main commit for a git install
   mikro migrate [--apply]         Find legacy rlmx artifacts (config dirs, .mcp.json,
                                   Claude plugin registration) and rewrite them for mikro.
@@ -452,6 +450,10 @@ async function runQuery(opts: CliOptions): Promise<void> {
     }
   }
 
+  // Startup preparation is complete; stdin/model work must not own the
+  // installation mutex for the lifetime of a query.
+  signalCliReady();
+
   // Read query from stdin if not provided as argument
   let query = opts.query;
   if (!query && !process.stdin.isTTY) {
@@ -618,6 +620,7 @@ async function runCache(opts: CliOptions): Promise<void> {
   console.error(`mikro: warming cache for ${opts.context} (~${validation.estimatedTokens.toLocaleString()} tokens)`);
 
   config.cache.enabled = true;
+  signalCliReady();
 
   try {
     await rlmLoop("warmup", context, config, {
@@ -711,6 +714,7 @@ async function runBatchCommand(opts: CliOptions): Promise<void> {
     console.error(`mikro batch: processing ${opts.batchFile}`);
   }
 
+  signalCliReady();
   await runBatch(resolve(opts.batchFile), context, config, {
     maxIterations: opts.maxIterations,
     timeout: opts.timeout,
@@ -824,6 +828,7 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
     const { runCostBenchmark, formatBenchmarkTable, saveBenchmarkResults } = await import("./benchmark.js");
     const outputIdx = args.indexOf("--output");
     const outputFormat = outputIdx >= 0 && args[outputIdx + 1] === "json" ? "json" as const : "table" as const;
+    signalCliReady();
     const results = await runCostBenchmark(config, { outputFormat });
     if (outputFormat === "json") {
       console.log(JSON.stringify(results, null, 2));
@@ -839,6 +844,7 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
     const idx = idxArgIdx >= 0 ? parseInt(args[idxArgIdx + 1], 10) : undefined;
 
     const { runOolongBenchmark, formatBenchmarkTable, saveBenchmarkResults } = await import("./benchmark.js");
+    signalCliReady();
     const results = await runOolongBenchmark(config, { samples, idx });
     console.error(formatBenchmarkTable(results));
     const savedPath = await saveBenchmarkResults(results);
@@ -849,12 +855,11 @@ async function runBenchmarkCommand(opts: CliOptions, args: string[]): Promise<vo
 }
 
 /**
- * mikro doctor — report health of providers, RTK, and config.
+ * mikro doctor — report health of providers and config.
  *
  * Exit codes:
  *   0 = all nominal
  *   1 = at least one provider API key is missing (warning)
- *   2 = rtk.enabled=always but rtk is not installed (error)
  */
 async function runDoctor(): Promise<void> {
   const { createRequire } = await import("node:module");
@@ -866,9 +871,6 @@ async function runDoctor(): Promise<void> {
   const configDir = process.cwd();
   const config = await loadConfig(configDir);
   applySettingsModelOverrides(config);
-
-  // Detect RTK (cached for process lifetime)
-  const rtk = await detectRtk();
 
   // Settings file presence
   const settingsPath = getSettingsPath();
@@ -907,17 +909,6 @@ async function runDoctor(): Promise<void> {
   const customProviders = config.providers;
   const configuredModelProblem = checkModelConfig(config.model);
 
-  // RTK mode text
-  const rtkMode = config.rtk.enabled;
-  let rtkModeText: string;
-  if (rtkMode === "always") {
-    rtkModeText = rtk.available ? "always (enabled)" : "always (MISSING — error)";
-  } else if (rtkMode === "never") {
-    rtkModeText = "never (disabled)";
-  } else {
-    rtkModeText = rtk.available ? "auto (enabled)" : "auto (disabled)";
-  }
-
   // ─── Output ────────────────────────────────────────────
   console.log(`mikro ${pkg.version}`);
   console.log(`node: ${process.version}`);
@@ -952,43 +943,17 @@ async function runDoctor(): Promise<void> {
   console.log(`  ${config.model.provider}/${config.model.model} : ${configuredModelProblem ? `UNRESOLVABLE — ${configuredModelProblem}` : "resolves"}`);
   console.log("");
 
-  console.log("RTK (token optimizer):");
-  console.log(`  installed : ${rtk.available ? "yes" : "no"}`);
-  if (rtk.available) {
-    console.log(`  version   : ${rtk.version ?? "(unknown)"}`);
-    if (rtk.path) console.log(`  path      : ${rtk.path}`);
-  }
-  console.log(`  mode      : ${rtkModeText}`);
-  console.log("");
-
   console.log("Config:");
   console.log(`  ${settingsPath} (${settingsExists ? "exists" : "missing"})`);
   console.log(`  Active template: ${activeTemplate}`);
 
   // ─── Exit code ────────────────────────────────────────
-  // Exit 2 — rtk.enabled=always but rtk is absent (error, overrides warning)
-  if (rtkMode === "always" && !rtk.available) {
-    console.error("");
-    console.error(
-      "Error: mikro config: rtk.enabled=always but rtk is not installed on PATH."
-    );
-    process.exit(2);
-  }
-
   // Exit 1 — at least one provider API key missing (warning)
   if (anyKeyMissing) {
     process.exit(1);
   }
 
   // Exit 0 — nominal
-}
-
-function runGit(root: string, args: string[]): string {
-  return execFileSync("git", ["-C", root, ...args], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-
-function runCommand(root: string, command: string, args: string[], env?: Record<string, string>): void {
-  execFileSync(command, args, { cwd: root, stdio: "inherit", env: env ? { ...process.env, ...env } : process.env });
 }
 
 /**
@@ -1033,52 +998,6 @@ async function runMigrate(args: string[]): Promise<void> {
   }
 }
 
-/** npm flags shared with bin/mikro.mjs: bounded network waits, no chatter. */
-const NPM_CI_ARGS = ["ci", "--include=dev", "--no-audit", "--no-fund", "--fetch-timeout=120000", "--fetch-retries=3"];
-
-/**
- * `npm ci` that cannot leave the checkout without dependencies.
- *
- * `npm ci` deletes node_modules before it installs, so a failure — or a
- * registry stall that makes the operator kill it — used to leave a `mikro`
- * that could not even print its version. The previous tree is parked under
- * `node_modules.prev` for the duration; on failure it is swapped back, on
- * success it is deleted. A hard kill mid-install still loses the fresh tree,
- * but bin/mikro.mjs repairs that on the next launch, and the parked copy is
- * restored here the next time update runs.
- */
-async function reinstallDependencies(root: string): Promise<void> {
-  const { existsSync } = await import("node:fs");
-  const { rename, rm } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const current = join(root, "node_modules");
-  const parked = join(root, "node_modules.prev");
-
-  if (existsSync(parked)) {
-    // A previous update died between park and success. Whichever tree is
-    // complete wins; an incomplete current tree is discarded.
-    if (!existsSync(join(current, ".package-lock.json"))) {
-      await rm(current, { recursive: true, force: true });
-      await rename(parked, current);
-    } else {
-      await rm(parked, { recursive: true, force: true });
-    }
-  }
-  if (existsSync(current)) await rename(current, parked);
-  try {
-    // prepare.mjs would build inside npm ci; update builds explicitly after.
-    runCommand(root, "npm", NPM_CI_ARGS, { MIKRO_SKIP_PREPARE: "1" });
-  } catch (err) {
-    await rm(current, { recursive: true, force: true });
-    if (existsSync(parked)) await rename(parked, current);
-    throw new Error(
-      `mikro update: npm ci failed — the previous dependencies were restored, nothing else changed. ` +
-        `(${err instanceof Error ? err.message.split("\n")[0] : String(err)})`
-    );
-  }
-  await rm(parked, { recursive: true, force: true });
-}
-
 /**
  * Installs made before bin/mikro.mjs existed symlink `~/.local/bin/mikro`
  * straight at `dist/src/cli.js`, which cannot start without node_modules. If
@@ -1108,65 +1027,22 @@ async function runUpdate(args: string[]): Promise<void> {
   const { fileURLToPath } = await import("node:url");
   const root = resolvePath(dirname(fileURLToPath(import.meta.url)), "../..");
 
-  try {
-    runGit(root, ["rev-parse", "--is-inside-work-tree"]);
-  } catch {
-    throw new Error("mikro update requires a git-installed checkout. Reinstall with scripts/install.sh.");
-  }
-
-  const before = runGit(root, ["rev-parse", "HEAD"]);
-  const dirty = runGit(root, ["status", "--porcelain"]);
-  if (dirty && !force) {
-    throw new Error("Refusing to update with local changes. Commit/stash them or rerun with --force for managed installs.");
-  }
-
-  console.log(`mikro update: ${root}`);
-  console.log("tip: `mikro migrate` finds legacy rlmx config dirs, .mcp.json entries and plugin registrations left by the rename.");
-  if (root.includes("/.rlmx/")) {
-    console.log("note: this checkout lives under the legacy ~/.rlmx path; re-run scripts/install.sh to migrate it to ~/.mikro.");
-  }
-  console.log(`before: ${before}`);
-  // Resolve the update target through FETCH_HEAD rather than origin/main so a
-  // checkout with a narrow or missing fetch refspec (single-branch or tag
-  // clones) still updates. FETCH_HEAD's first entry is the branch named here.
-  try {
-    runGit(root, ["fetch", "origin", "main", "--tags"]);
-  } catch (error) {
-    let url = "origin";
-    try {
-      url = runGit(root, ["remote", "get-url", "origin"]);
-    } catch {
-      // keep the placeholder
-    }
-    const detail = error instanceof Error ? error.message.split("\n").pop() ?? "" : "";
-    throw new Error(`mikro update: could not fetch main from ${url}${detail ? ` (${detail})` : ""}. Re-run scripts/install.sh to repair the remote.`);
-  }
-  const target = runGit(root, ["rev-parse", "FETCH_HEAD"]);
-  console.log(`target: ${target}`);
-
-  if (before === target && !dirty) {
-    console.log("Already up to date.");
-    return;
-  }
-
-  runGit(root, ["reset", "--hard", "FETCH_HEAD"]);
-  // `clean -fd` never touches node_modules (ignored), so the previous install
-  // survives the reset and can be restored if the fresh one fails.
-  runGit(root, ["clean", "-fd"]);
-  await reinstallDependencies(root);
-  runCommand(root, "npm", ["run", "build"]);
+  const { join } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const { runManaged } = await import(pathToFileURL(join(root, "bin", "install-state.mjs")).href);
+  const status = await runManaged(root, "update", force ? ["--force"] : []);
+  if (status !== 0) throw Object.assign(new Error("mikro update failed"), { exitCode: status });
   await repointLauncher(root);
-
-  const after = runGit(root, ["rev-parse", "HEAD"]);
-  const { createRequire } = await import("node:module");
-  const require = createRequire(import.meta.url);
-  const pkg = require("../../package.json") as { version: string };
-  console.log(`after:  ${after}`);
-  console.log(`mikro v${pkg.version}`);
 }
 
+// The launcher holds install ownership through startup, not command lifetime.
+// Updates delegate ownership to their mutation worker instead.
+export let installOperation = false;
+let signalCliReady: () => void;
+export const cliReady = new Promise<void>((resolveReady) => { signalCliReady = resolveReady; });
 async function main(): Promise<void> {
   const opts = parseCliArgs(process.argv.slice(2));
+  installOperation = opts.command === "update";
 
   // Load global settings and inject API keys before any command
   const globalSettings = await loadSettings();
@@ -1231,7 +1107,10 @@ async function main(): Promise<void> {
 
     case "acp": {
       const { runAcp } = await import("./acp/agent.js");
-      await runAcp();
+      // runAcp sets up stdio synchronously before waiting for disconnect.
+      const running = runAcp();
+      signalCliReady();
+      await running;
       break;
     }
 
@@ -1262,7 +1141,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
+void main().then(signalCliReady!).catch((err) => {
   console.error("mikro error:", err.message);
-  process.exit(1);
+  process.exit(err.exitCode ?? 1);
 });

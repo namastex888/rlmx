@@ -126,14 +126,6 @@ export {
 } from "./tool-loader.js";
 export type { LoadOptions, LoadResult } from "./tool-loader.js";
 
-// ─── RTK plugin (G3a) ────────────────────────────────────────────
-export { registerRtkTool } from "./rtk-plugin.js";
-export type {
-	RegisterRtkOptions,
-	RtkToolArgs,
-	RtkToolResult,
-} from "./rtk-plugin.js";
-
 // ─── Python plugin loader (G3b) ──────────────────────────────────
 export {
 	DEFAULT_PYTHON_BIN,

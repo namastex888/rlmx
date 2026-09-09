@@ -73,7 +73,7 @@
  *   request decoration prime cannot replicate.
  * - `context` of type `dict`.
  *
- * `config.cache` / `storage` / `rtk` are deliberately NOT rejected: they are
+ * `config.cache` / `storage` are deliberately NOT rejected: they are
  * already inert on the legacy MCP path (rlmLoop runs with cache and storage
  * mode off), so rejecting them here would make prime stricter than the
  * reference backend.

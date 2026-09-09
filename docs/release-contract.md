@@ -33,7 +33,7 @@ The CLI is git-installed:
 
 1. `install.sh` clones or refreshes the public repository.
 2. It checks out `main`.
-3. It installs dependencies.
+3. It validates npm-only checkout authority before dependency recovery or installation, then installs from the committed v3 `package-lock.json`.
 4. It builds local `dist/`.
 5. It links the `mikro` executable into the user's bin directory.
 
@@ -45,6 +45,13 @@ mikro is not published to npm. The SDK ships inside the same git checkout
 (`dist/` is committed) and is consumed as a git dependency
 (`npm install github:automagik-dev/mikro`). There is no publish workflow, no
 dist-tag, and no registry artifact to keep coherent with `main`.
+
+Git-dependency consumers use their own npm manifest and lock; that consumer
+installation is outside the Mikro-checkout guard-before-mutation guarantee.
+For local checkout dependencies use `npm run deps:ci`. CI, the canonical
+installer, updater and launcher repair validate the same authority before
+dependency mutation. Raw `npm ci` or `npm install` bypasses this protection;
+such bypasses are not covered by the guarantee.
 
 - `mikro --version` reports the package/runtime version embedded in the checkout.
   Every release commit on `main` carries a released, tagged version, so this is a

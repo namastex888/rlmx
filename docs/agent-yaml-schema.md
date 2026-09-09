@@ -77,7 +77,7 @@ temperature: 0               # number, 0–2. `0` is greedy decoding — a real
 tools:
   - greet                    # Resolves from tools/greet.{mjs,js,py}.
   - search_corpus            # An optional same-name .schema.json supplies
-  - rtk                      # model-facing metadata.
+                             # model-facing metadata.
 
 # ─── Scope hints (advisory, SDK does NOT enforce) ────────────
 scope:

@@ -60,7 +60,17 @@ if (process.env.MIKRO_STUB_HANG === "1") {
   const { spawn } = require("node:child_process");
   // No detached: the grandchild stays in the shim's process group, so the
   // backend's group kill must reach it — that is the tree-kill assertion.
-  const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1e3)"], { stdio: "ignore" });
+  // A readiness marker from the grandchild proves both real startup and that
+  // the parent drained more stderr than fits in a pipe before we spawned it.
+  if (process.env.MIKRO_STUB_READY_FILE) {
+    for (let i = 0; i < 64; i++) fs.writeSync(2, "x".repeat(65536));
+  }
+  const child = spawn(process.execPath, ["-e", \`
+    if (process.env.MIKRO_STUB_READY_FILE) {
+      require("node:fs").writeFileSync(process.env.MIKRO_STUB_READY_FILE, String(process.pid));
+    }
+    setInterval(()=>{},1e3);
+  \`], { stdio: "ignore" });
   if (process.env.MIKRO_STUB_CHILD_PID_FILE) {
     fs.writeFileSync(process.env.MIKRO_STUB_CHILD_PID_FILE, String(child.pid));
   }
@@ -824,14 +834,21 @@ describe("prime backend — budget enforcement", () => {
             await rm(dir, { recursive: true, force: true });
         }
     });
-    it("kills the tree on the wall-clock deadline and returns the verbatim timeout answer", async () => {
+    it("kills the tree on the wall-clock deadline and returns the verbatim timeout answer", { timeout: 15_000 }, async (t) => {
         const dir = await scratch();
+        const selfPidFile = join(dir, "self.pid");
+        // Capture the real timer before mocking: readiness is bounded by real time,
+        // independently of the production deadline that this test advances.
+        const realSetTimeout = setTimeout;
+        const realClearTimeout = clearTimeout;
+        const pause = () => new Promise((resolve) => realSetTimeout(resolve, 10));
+        let treeStopped = false;
         try {
-            const selfPidFile = join(dir, "self.pid");
             const childPidFile = join(dir, "child.pid");
             const backend = await makeSpawnBackend(dir);
             await withEnv({
                 MIKRO_MCP_RUN_TIMEOUT_MS: "250",
+                MIKRO_STUB_READY_FILE: join(dir, "ready.pid"),
                 MIKRO_STUB_EVENTS: JSON.stringify([SESSION, { type: "agent_start" }]),
                 MIKRO_STUB_HANG: "1",
                 MIKRO_STUB_SELF_PID_FILE: selfPidFile,
@@ -840,15 +857,66 @@ describe("prime backend — budget enforcement", () => {
                 // block the child and stall the kill path.
                 MIKRO_STUB_STDERR_BYTES: "65536",
             }, async () => {
-                const { result } = await runOnce(backend);
+                t.mock.timers.enable({ apis: ["setTimeout"] });
+                let settled = false;
+                const run = runOnce(backend).finally(() => { settled = true; });
+                // Attach rejection handling while waiting for the independent fixture.
+                void run.catch(() => { });
+                const readyDeadline = Date.now() + 10_000;
+                let readyPid;
+                while (Date.now() < readyDeadline && !settled) {
+                    try {
+                        readyPid = Number(await readFile(join(dir, "ready.pid"), "utf8"));
+                        if (readyPid > 0)
+                            break;
+                    }
+                    catch (err) {
+                        if (err.code !== "ENOENT")
+                            throw err;
+                    }
+                    await pause();
+                }
+                assert.ok(readyPid, "real process tree must start and drain 4 MiB of stderr");
+                const selfPid = Number(await readFile(selfPidFile, "utf8"));
+                assert.equal(readyPid, Number(await readFile(childPidFile, "utf8")));
+                assert.equal(settled, false);
+                t.mock.timers.tick(249);
+                await pause();
+                assert.equal(settled, false, "the run must survive before its deadline");
+                process.kill(selfPid, 0);
+                process.kill(readyPid, 0);
+                t.mock.timers.tick(1);
+                // Keep a broken close/kill path bounded even while timers are mocked.
+                let watchdog;
+                const { result } = await Promise.race([
+                    run,
+                    new Promise((_, reject) => {
+                        watchdog = realSetTimeout(() => reject(new Error("deadline did not settle the run")), 2_000);
+                    }),
+                ]).finally(() => { realClearTimeout(watchdog); });
+                t.mock.timers.reset();
                 assert.equal(result.answer, TIMEOUT_ANSWER);
                 assert.equal(result.budgetHit, null);
                 assert.equal(isFailedRun(result), true, "a deadline expiry is a failed run");
             });
             await assertDead(Number(await readFile(selfPidFile, "utf8")), "shim");
             await assertDead(Number(await readFile(childPidFile, "utf8")), "shim grandchild");
+            treeStopped = true;
         }
         finally {
+            t.mock.timers.reset();
+            if (!treeStopped) {
+                // A failed readiness assertion must not leave the hanging fixture alive.
+                try {
+                    const pid = Number(await readFile(selfPidFile, "utf8"));
+                    if (Number.isSafeInteger(pid) && pid > 0)
+                        process.kill(-pid, "SIGKILL");
+                }
+                catch (err) {
+                    if (!["ENOENT", "ESRCH"].includes(err.code ?? ""))
+                        throw err;
+                }
+            }
             await rm(dir, { recursive: true, force: true });
         }
     });

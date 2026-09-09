@@ -31,7 +31,7 @@ describe("MIKRO_CLI_SCHEMA", () => {
         const exitCodes = new Map(MIKRO_CLI_SCHEMA.exitCodes.map((entry) => [entry.code, entry.meaning]));
         assert.equal(exitCodes.get(0), "success");
         assert.ok(exitCodes.get(1)?.includes("error"));
-        assert.ok(exitCodes.get(2)?.includes("rtk"));
+        assert.equal(exitCodes.has(2), false);
         assert.ok(exitCodes.get(130)?.includes("SIGINT"));
         assert.ok(exitCodes.get(143)?.includes("SIGTERM"));
     });

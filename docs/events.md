@@ -6,7 +6,7 @@
 > G2b wired everything into `runAgent()` with a pluggable driver seam.
 > G2c proved the wiring against a live LLM via `rlmDriver`.
 > **G3a adds the tool plugin loader: `agent.yaml` spec parser, in-process
-> `ToolRegistry`, JS/MJS plugin resolution, RTK as a first-class tool,
+> `ToolRegistry`, JS/MJS plugin resolution,
 > and per-depth structured metrics riding on `IterationOutput.metrics`.**
 > See `.genie/wishes/rlmx-sdk-upgrade/WISH.md`.
 
@@ -219,14 +219,13 @@ import { sdk } from "mikro";
 // 1. Load the agent's declared shape
 const spec = await sdk.loadAgentSpec("/path/to/my-agent");
 
-// 2. Register pre-built tools that ship with the SDK
+// 2. Create a registry (optionally register your own handlers here)
 const registry = sdk.createToolRegistry();
-await sdk.registerRtkTool(registry); // no-op if rtk binary absent
 
 // 3. Fill in the rest from `tools/*.mjs` files next to agent.yaml
 const { loaded, skipped, missing } = await sdk.loadPluginTools(spec, registry);
 // loaded:  tools newly added from files
-// skipped: pre-registered (e.g. rtk) — file ignored
+// skipped: pre-registered by the consumer — file ignored
 // missing: declared in agent.yaml but no plugin file on disk
 
 // 4. Hand the registry to runAgent
@@ -317,7 +316,7 @@ on `AgentConfig`.
 
 These PRs ship contract shape + emit infrastructure + Group-2
 primitives + the `runAgent()` wire (G2b) + the tool plugin loader /
-RTK / metrics (G3a). They do **not**:
+metrics (G3a). They do **not**:
 
 - instrument `rlm.ts` directly — the iteration logic is behind the
   `IterationDriver` seam, so `rlm.ts` remains untouched until a

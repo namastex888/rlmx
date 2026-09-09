@@ -82,6 +82,18 @@ export function makePythonPluginHandler(toolName, scriptPath, options = {}) {
         if (!existsSync(scriptPath)) {
             throw new PythonPluginError(toolName, null, "", "", `script missing at ${scriptPath}`);
         }
+        if (ctx.signal.aborted) {
+            throw new PythonPluginError(toolName, null, "", "", "aborted by caller");
+        }
+        // Serialize before spawning so invalid arguments cannot leave a child
+        // waiting for input, especially when the timeout is disabled.
+        let input;
+        try {
+            input = JSON.stringify(args ?? null);
+        }
+        catch (err) {
+            throw new PythonPluginError(toolName, null, "", "", `stdin serialization failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
         const env = envOverride === undefined
             ? { ...process.env }
             : envOverride;
@@ -101,14 +113,11 @@ export function makePythonPluginHandler(toolName, scriptPath, options = {}) {
         const stderrChunks = [];
         child.stdout.on("data", (c) => stdoutChunks.push(c));
         child.stderr.on("data", (c) => stderrChunks.push(c));
-        // Feed args JSON to stdin + close.
-        try {
-            child.stdin.write(JSON.stringify(args ?? null));
-            child.stdin.end();
-        }
-        catch {
-            // ignore — stdin closure errors surface via child exit code.
-        }
+        // Pipe errors are asynchronous and do not reach the write try/catch.
+        // Keep listening through child close; settling on EPIPE would lose the
+        // plugin's eventual exit code and trailing stderr.
+        let stdinError;
+        child.stdin.on("error", (error) => { stdinError ??= error; });
         // Wire timeout + abort.
         let timedOut = false;
         let timer;
@@ -120,12 +129,23 @@ export function makePythonPluginHandler(toolName, scriptPath, options = {}) {
         }
         const onAbort = () => child.kill("SIGKILL");
         ctx.signal.addEventListener("abort", onAbort, { once: true });
+        if (ctx.signal.aborted)
+            onAbort();
         const exit = await new Promise((resolve) => {
-            // Spawn-time errors (e.g. ENOENT when the interpreter path is
-            // bogus) arrive via the 'error' event. Capture instead of
-            // rejecting so we can wrap consistently as PythonPluginError.
-            child.once("error", (error) => resolve({ code: null, signal: null, error }));
-            child.once("close", (code, signal) => resolve({ code, signal }));
+            // Close follows spawn failure as well as ordinary exit, and waits
+            // for stdio to close. Use it as the single settlement boundary.
+            let spawnError;
+            child.once("error", (error) => { spawnError = error; });
+            child.once("close", (code, signal) => resolve({ code, signal, error: spawnError }));
+            // Install all lifecycle listeners before attempting input delivery.
+            try {
+                child.stdin.end(input);
+            }
+            catch (err) {
+                stdinError = err instanceof Error ? err : new Error(String(err));
+                child.stdin.destroy();
+                child.kill("SIGKILL");
+            }
         });
         if (timer)
             clearTimeout(timer);
@@ -144,6 +164,9 @@ export function makePythonPluginHandler(toolName, scriptPath, options = {}) {
         }
         if (exit.code !== 0) {
             throw new PythonPluginError(toolName, exit.code, stderr, stdout, exit.signal ? `killed by ${exit.signal}` : "non-zero exit");
+        }
+        if (stdinError) {
+            throw new PythonPluginError(toolName, exit.code, stderr, stdout, `stdin write failed: ${stdinError.message}`);
         }
         let value;
         try {

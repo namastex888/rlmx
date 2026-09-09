@@ -45,9 +45,6 @@ export const DEFAULT_STORAGE_CONFIG = {
     chunkUtilization: 0.6,
     charsPerToken: 4,
 };
-export const DEFAULT_RTK_CONFIG = {
-    enabled: "auto",
-};
 export const DEFAULT_PROMPT_CONFIG = {
     appendStopProtocol: true,
 };
@@ -356,14 +353,6 @@ function parseYamlConfig(content, dir, globalProviders = []) {
         chunkUtilization,
         charsPerToken,
     };
-    // Parse rtk config
-    const rawRtkEnabled = cfg.rtk?.enabled ?? DEFAULT_RTK_CONFIG.enabled;
-    if (!["auto", "always", "never"].includes(rawRtkEnabled)) {
-        throw new Error(`Invalid rtk.enabled "${rawRtkEnabled}" in mikro.yaml. Must be one of: auto, always, never.`);
-    }
-    const rtk = {
-        enabled: rawRtkEnabled,
-    };
     // Parse prompt config
     const rawAppendStopProtocol = cfg.prompt?.["append-stop-protocol"] ?? DEFAULT_PROMPT_CONFIG.appendStopProtocol;
     if (typeof rawAppendStopProtocol !== "boolean") {
@@ -373,8 +362,8 @@ function parseYamlConfig(content, dir, globalProviders = []) {
         appendStopProtocol: rawAppendStopProtocol,
     };
     // Parse temperature. A bare `temperature:` key parses as YAML null, which is
-    // the same "unset" the absent key means — the convention `rtk.enabled` and
-    // `prompt.append-stop-protocol` already follow. Anything else must be a
+    // the same "unset" the absent key means — the convention
+    // `prompt.append-stop-protocol` already follows. Anything else must be a
     // number in range: `temperature: hot` reaching the wire is a run that either
     // errors deep inside a provider SDK or, worse, gets silently normalised.
     const rawTemperature = cfg.temperature ?? null;
@@ -391,7 +380,6 @@ function parseYamlConfig(content, dir, globalProviders = []) {
         gemini,
         output,
         storage,
-        rtk,
         prompt,
         temperature: rawTemperature,
         providers,
@@ -418,7 +406,6 @@ function defaultConfig(dir, providers = []) {
         gemini: { ...DEFAULT_GEMINI_CONFIG },
         output: { ...DEFAULT_OUTPUT_CONFIG },
         storage: { ...DEFAULT_STORAGE_CONFIG },
-        rtk: { ...DEFAULT_RTK_CONFIG },
         prompt: { ...DEFAULT_PROMPT_CONFIG },
         temperature: null,
         providers,

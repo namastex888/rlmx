@@ -28,8 +28,6 @@ export { createToolRegistry, toolRegistryAsResolver, UnknownToolError, } from ".
 export type { ToolContext, ToolHandler, ToolRegistry, ToolSchema } from "./tool-registry.js";
 export { InvalidPluginError, MissingPluginError, loadPluginTools, } from "./tool-loader.js";
 export type { LoadOptions, LoadResult } from "./tool-loader.js";
-export { registerRtkTool } from "./rtk-plugin.js";
-export type { RegisterRtkOptions, RtkToolArgs, RtkToolResult, } from "./rtk-plugin.js";
 export { DEFAULT_PYTHON_BIN, DEFAULT_TIMEOUT_MS as PYTHON_DEFAULT_TIMEOUT_MS, loadPythonPlugins, makePythonPluginHandler, PythonPluginError, PythonPluginTimeoutError, } from "./python-plugin.js";
 export type { PythonLoadResult, PythonPluginExecResult, PythonPluginOptions, } from "./python-plugin.js";
 export { createMetricsRecorder } from "./metrics.js";
